@@ -27,7 +27,7 @@ from pydantic import BaseModel
 import embed as embed_mod  # PLIP 编码器（懒加载，wsi-bridge 目录在 sys.path）
 import conch_embed as conch_mod  # CONCH 编码器（懒加载，detect_roi 检索首选）
 
-ROOT = Path(__file__).resolve().parent.parent  # path-ask/
+ROOT = Path(__file__).resolve().parent.parent  # 仓库根目录
 REGISTRY_PATH = Path(os.environ.get("PATHASK_WSI_REGISTRY", ROOT / "data" / "wsilist.json"))
 HOST = os.environ.get("PATHASK_BRIDGE_HOST", "127.0.0.1")
 PORT = int(os.environ.get("PATHASK_BRIDGE_PORT", "8787"))
@@ -50,7 +50,7 @@ _mask_cache_lock = threading.Lock()
 
 def load_registry() -> None:
     if not REGISTRY_PATH.exists():
-        raise RuntimeError(f"registry 不存在: {REGISTRY_PATH}（先按 data/README.md 转移 WSI）")
+        raise RuntimeError(f"registry 不存在: {REGISTRY_PATH}（用 PATHASK_WSI_REGISTRY 指向登记表 JSON，格式见 wsi-bridge/README.md）")
     data = json.loads(REGISTRY_PATH.read_text())
     base = REGISTRY_PATH.parent
     for s in data.get("slides", []):

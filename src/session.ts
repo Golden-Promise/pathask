@@ -50,7 +50,7 @@ export function createSession(slideId = 'slide_brca_001'): PathAskSession {
 /** 真实会话：读 data/wsilist.json 注册表 + 连 WSI 桥接。无真实 WSI 时抛错提示先转数据。 */
 export function createRealSession(slideId?: string): PathAskSession {
   const registry = loadWsiRegistry()
-  if (registry.size === 0) throw new Error('wsilist.json 未登记任何真实 WSI，先转数据（见 data/README.md）')
+  if (registry.size === 0) throw new Error('WSI 登记表未登记任何可用切片（检查 PATHASK_WSI_REGISTRY 指向的 JSON，格式见 wsi-bridge/README.md）')
 
   const firstId = slideId ?? [...registry.keys()][0]
   const metrics = new SessionMetrics()
