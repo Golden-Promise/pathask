@@ -3,8 +3,7 @@ import { bridgePathInfo, resilient, type EndpointSink } from '../util/resilience
 import type { WsiInfo, WsiRegion, WsiThumbnail, WsiTissueMask } from './wsiTypes'
 
 /** 桥接**单次 HTTP** 的默认墙钟上限（env `PATHASK_BRIDGE_TIMEOUT_MS`，默认 300_000）。
- *  取值依据：实测最慢的**合法**路径是 4.95GP 单层巨片冷重算组织掩膜 ≈205s，5min 是其 ~1.5×
- *  ——超时是「抓死锁」不是「压性能」。比工具预算(300~420s)略小是刻意的：
+ *  超时是「抓死锁」不是「压性能」。比工具预算(300~420s)略小是刻意的：
  *  桥端先于工具预算到点，错误能落到 BRIDGE_TIMEOUT 而不是笼统的 TOOL_TIMEOUT。 */
 export const DEFAULT_BRIDGE_TIMEOUT_MS = 300_000
 
@@ -22,7 +21,7 @@ function normalizeSlideId(slideId: string): string {
 }
 
 export class WsiClient {
-  /** `sink`：分端点观测（Step 0）。不传则只走熔断、不记耗时（探针/脚本用裸 WsiClient 的情形）。 */
+  /** `sink`：分端点观测。不传则只走熔断、不记耗时（探针/脚本用裸 WsiClient 的情形）。 */
   constructor(
     readonly baseUrl = process.env.PATHASK_BRIDGE_URL ?? 'http://127.0.0.1:8787',
     private readonly sink?: EndpointSink,
@@ -49,15 +48,15 @@ export class WsiClient {
     return err instanceof Error ? err : new Error(String(err))
   }
 
-  /** 所有桥接调用都接受可选 signal（2026-09-10）：此前 `get`/`post` 是**裸 fetch，连 signal 都不传**
-   *  → agent.abort() / 工具预算 都掐不断在途 HTTP，工具「跑一半挂了」只能干等。调用方传 ctx.signal。
+  /** 所有桥接调用都接受可选 signal：agent.abort() / 工具预算 都掐不断在途 HTTP，
+   *  工具「跑一半挂了」只能干等。调用方传 ctx.signal。
    *
-   *  无 signal 时也必须带上限（2026-09-11）：那种情况下此前只能靠 undici 自身 ~300s 默认值兜底，
-   *  且抛的是 undici 内部错误 → 分类器只能判 UNKNOWN。现在超时由本层掌控（`bridgeError` 认领）
+   *  无 signal 时也必须带上限：那种情况下只能靠 undici 自身 ~300s 默认值兜底，
+   *  且抛的是 undici 内部错误 → 分类器只能判 UNKNOWN。超时由本层掌控（`bridgeError` 认领）
    *  → BRIDGE_TIMEOUT，且**工具预算之外也成立**（health、runner 的 sys-* 系统调用同样有界）。 */
   private async get<T>(path: string, signal?: AbortSignal): Promise<T> {
     const info = bridgePathInfo(path)
-    // Step 0/1：分端点观测 + 熔断。熔断中**不发请求**（这才是「桥挂掉不必每个病例各付 300s」的落点）。
+    // 分端点观测 + 熔断。熔断中**不发请求**（这才是「桥挂掉不必每个病例各付 300s」的落点）。
     // scope 从 URL 里的 slide id 取——超时类失败按片子分片，避免一张病态巨片判死整个服务。
     return resilient({ endpoint: 'bridge', op: info.op, scope: info.scope, sink: this.sink }, async () => {
       const guard = withTimeout(signal, this.bridgeTimeoutMs())

@@ -6,10 +6,8 @@ import type { Cancer } from '../types'
 // 目的：决策 LLM 的 organHint 从"窄候选短名单(2-4项)"放宽到"该器官完整诊断谱"，
 //   让 LLM 凭形态证据在这个空间里收敛主诊断/鉴别，而非窄名单"小抄"式先验。
 //
-// 关键约束（2026-09-04 用户决策 + Plan 代理实测对齐 gold.diagnosis_accept）：
-//  1. name 必须对齐 gold.diagnosis_accept 的规范中文名（dx_accept_correct 双向 includes 命中）。
-//     ⚠️ 盲搬 DIAGNOSIS_RULES 名会 0 命中：结肠腺癌→0/9、卵巢癌（HGSC）→0/5、
-//        肾细胞癌（透明细胞型）→0/2、宫颈癌→0/3、星形细胞瘤（胶质瘤）→0/4。
+// 关键约束：
+//  1. name 必须对齐 gold.diagnosis_accept 的规范中文名。
 //     括号后缀（如 浸润性导管癌（IDC））仅当底术语存活为子串时安全。
 //  2. aliases = 同病异写 + 中英 + 缩写 + differential_gold 英文(toZh 对齐)。
 //  3. evTokens = 正性形态学/组织学 token（VLM 输出偏英文形态学），否定感知证据门用它。
@@ -29,7 +27,7 @@ export interface SpectrumEntry {
   name: string
   /** 别名：同病异写 + 中英 + 缩写 + GT 各写法（含 toZh 英文形式）。 */
   aliases: string[]
-  /** 良恶性极性（审计/canary 用；运行时经诊断名判，不落 Report 契约）。 */
+  /** 良恶性极性（审计用；运行时经诊断名判，不落 Report 契约）。 */
   polarity: Polarity
   /** 正性形态学/组织学特征 token（VLM 形态输出多为英文）。证据门命中即算支持。 */
   evTokens: string[]
@@ -68,7 +66,7 @@ export const DIAGNOSIS_SPECTRUM: SpectrumEntry[] = [
     evTokens: ['benign', 'reactive', '良性', '反应性', '未见异型', '未见异型性', 'intact', 'base membrane intact', 'no evidence of invasion', '细胞温和', '纤维上皮', '未见癌', 'benign lesion'],
   },
 
-  // ─────────────────────────── breast（12 例）─────────────────────────────
+  // ─────────────────────────── breast ─────────────────────────────
   { organ: 'breast', name: '浸润性导管癌（IDC）', polarity: 'malignant', familyOf: '浸润性癌',
     aliases: ['浸润性导管癌', 'invasive ductal carcinoma', 'idc', 'invasive ductal', 'ductal carcinoma', 'infiltrating ductal carcinoma', '浸润性浸润导管癌'],
     evTokens: ['invasive ductal', 'ductal carcinoma', 'glandular crowding', 'infiltrative', '基底膜断裂', 'invasive', 'pleomorphic cells'] },
@@ -102,8 +100,7 @@ export const DIAGNOSIS_SPECTRUM: SpectrumEntry[] = [
     aliases: ['hashimoto', 'hashimoto thyroiditis', '桥本', '淋巴细胞性甲状腺炎', 'lymphocytic thyroiditis'],
     evTokens: ['hashimoto', 'lymphocytic thyroiditis', 'hurthle', 'hurthle cells', 'lymphocytic infiltrate'] },
 
-  // ─────────────────────────── ovary（5 例）───────────────────────────────
-  // name 必须对齐 accept 规范名（计划实测「卵巢癌（HGSC）」做 name 0/5 → 不作 standalone name）。
+  // ─────────────────────────── ovary ───────────────────────────────
   // HGSC/高级别浆液/ovarian serous 各写法全部收为别名，LLM 无论怎么输出都归一到「卵巢浆液性癌」。
   { organ: 'ovary', name: '卵巢浆液性癌', polarity: 'malignant',
     aliases: [
@@ -128,8 +125,8 @@ export const DIAGNOSIS_SPECTRUM: SpectrumEntry[] = [
     aliases: ['endometriotic cyst', 'endometrioma', '子宫内膜异位囊肿', '巧克力囊肿', 'ovarian endometriosis', 'corpus luteum cyst'],
     evTokens: ['endometrioma', 'endometriotic', 'chocolate cyst', 'corpus luteum', '子宫内膜间质', 'hemosiderin'] },
 
-  // ─────────────────────────── stomach（12 例）─────────────────────────────
-  // 「胃癌」与「胃腺癌」非子串关系，且独立 gold（case_00003 只接受「胃癌」）→ 须单独成 entry。
+  // ─────────────────────────── stomach ─────────────────────────────
+  // 「胃癌」与「胃腺癌」非子串关系，且独立 gold → 须单独成 entry。
   { organ: 'stomach', name: '胃腺癌', polarity: 'malignant',
     aliases: ['胃低分化腺癌', 'gastric carcinoma', 'gastric adenocarcinoma', 'stomach adenocarcinoma', 'stomach cancer', 'low-grade gastric adenocarcinoma', '低分化胃腺癌', '弥漫型胃癌', '弥漫性胃癌', '弥漫型胃腺癌', 'diffuse gastric adenocarcinoma', 'poorly differentiated gastric adenocarcinoma'],
     evTokens: ['gastric', 'gastric carcinoma', '腺癌', 'adenocarcinoma', 'signet', '印戒', 'intestinal metaplasia', 'mucin', 'poorly differentiated', 'single cells'] },
@@ -152,7 +149,7 @@ export const DIAGNOSIS_SPECTRUM: SpectrumEntry[] = [
     aliases: ['胃肠道间质瘤', 'gist', 'gastrointestinal stromal tumor'],
     evTokens: ['gist', 'spindle cells', 'gastrointestinal stromal', 'cd117', 'kitt'] },
 
-  // ─────────────────────────── colon（9 例）────────────────────────────────
+  // ─────────────────────────── colon ────────────────────────────────
   { organ: 'colon', name: '结直肠癌', polarity: 'malignant',
     aliases: ['结直肠腺癌', 'colorectal carcinoma', 'colorectal adenocarcinoma', 'colorectal cancer', '直肠癌', 'colon adenocarcinoma', 'colorectal cancer metastasis', '肝转移性结直肠癌', '结直肠癌肝转移', '转移性结直肠癌', '同步性结直肠癌', 'synchronous colorectal', 'liver metastasis of colorectal cancer', 'colorectal adenocarcinoma metastasis'],
     evTokens: ['colonic adenocarcinoma', 'adenocarcinoma', 'mucin', 'carcinoma', '神经内分泌', 'nuclear atypia'] },
@@ -172,9 +169,7 @@ export const DIAGNOSIS_SPECTRUM: SpectrumEntry[] = [
     aliases: ['sessile serrated lesion', 'ssl', '无蒂锯齿状腺瘤', 'sessile serrated adenoma', '锯齿状病变'],
     evTokens: ['serrated', '锯齿', 'sessile serrated', 'sel', 'crypt'] },
 
-  // ─────────────────────────── soft_tissue（8 例）──────────────────────────
-  // 平滑肌肉瘤：aliases 不再折叠「梭形细胞肉瘤」家族——那是独立 gold（case_00002 只接受梭形细胞肉瘤/腹膜后梭形/
-  // retinucleotide 英文写法，与「平滑肌肉瘤」非子串关系），须单独成 entry，否则折叠成「平滑肌肉瘤」会漏检。
+  // ─────────────────────────── soft_tissue ──────────────────────────
   { organ: 'soft_tissue', name: '平滑肌肉瘤', polarity: 'malignant',
     aliases: ['leiomyosarcoma', '子宫平滑肌肉瘤', '平滑肌', '原发平滑肌肉瘤'],
     evTokens: ['leiomyosarcoma', '平滑肌', 'spindle cells', '梭形', 'eosinophilic cells', 'pleomorphic spindle', 'fascicles'] },
@@ -203,7 +198,7 @@ export const DIAGNOSIS_SPECTRUM: SpectrumEntry[] = [
     aliases: ['desmoid', '硬纤维瘤', '纤维瘤病', 'fibromatosis', 'desmoid tumor'],
     evTokens: ['desmoid', 'fibromatosis', '长束状', 'long fascicles', 'spindle', 'collagen'] },
 
-  // ─────────────────────────── prostate（7 例）──────────────────────────────
+  // ─────────────────────────── prostate ──────────────────────────────
   { organ: 'prostate', name: '前列腺腺癌', polarity: 'malignant',
     aliases: ['前列腺癌', 'prostatic adenocarcinoma', 'prostate adenocarcinoma', 'prostate cancer', 'prostatic carcinoma', '前列腺腺癌（腺泡腺癌）', '前列腺腺泡腺癌'],
     evTokens: ['prostatic', 'prostate', '前列腺', 'gleason', 'cribriform', 'perineural', 'nuclear atypia', 'fused glands'] },
@@ -217,7 +212,7 @@ export const DIAGNOSIS_SPECTRUM: SpectrumEntry[] = [
     aliases: ['pin', 'prostatic intraepithelial neoplasia', '高级别前列腺上皮内瘤变', 'hgpin'],
     evTokens: ['pin', 'intraepithelial neoplasia', 'hgpin', 'high grade pin', 'atypical ductal'] },
 
-  // ─────────────────────────── pancreas（7 例）─────────────────────────────
+  // ─────────────────────────── pancreas ─────────────────────────────
   { organ: 'pancreas', name: '胰腺导管腺癌', polarity: 'malignant',
     aliases: ['pancreatic ductal adenocarcinoma', 'pancreatic adenocarcinoma', 'pda', '胰腺癌', 'pdac', 'pancreatic cancer', '胰腺导管癌'],
     evTokens: ['pancreatic ductal', 'pancreatic adenocarcinoma', 'pda', '胰腺', 'ductal', 'mucin', 'nuclear atypia'] },
@@ -237,7 +232,7 @@ export const DIAGNOSIS_SPECTRUM: SpectrumEntry[] = [
     aliases: ['chronic pancreatitis', '胰腺炎', '慢性胰腺炎', '炎症'],
     evTokens: ['pancreatitis', '胰腺炎', 'chronic inflammation', 'fibrosis', 'lymphoplasmacytic', '石头'] },
 
-  // ─────────────────────────── lung（7 例）─────────────────────────────────
+  // ─────────────────────────── lung ─────────────────────────────────
   { organ: 'lung', name: '肺腺癌', polarity: 'malignant',
     aliases: ['lung adenocarcinoma', 'pulmonary adenocarcinoma', 'lung adeno', 'alveolar carcinoma', '低分化肺腺癌', 'poorly differentiated lung adenocarcinoma', 'adenocarcinoma of the lung', 'lung cancer'],
     evTokens: ['adenocarcinoma', '肺腺', 'lepidic', '贴壁生长', 'bronchioloalveolar', 'bronchioloalveolar carcinoma', 'papillary', 'mucinous', 'acinar'] },
@@ -266,7 +261,7 @@ export const DIAGNOSIS_SPECTRUM: SpectrumEntry[] = [
     aliases: ['inflammatory pseudotumor', '炎性假瘤', '结核', 'granuloma', '肉芽肿', '肺炎', 'inflammation'],
     evTokens: ['granuloma', '肉芽肿', 'inflammation', 'epithelioid', 'caseous', 'langhans', '炎性'] },
 
-  // ─────────────────────────── lymph（5 例）─────────────────────────────────
+  // ─────────────────────────── lymph ─────────────────────────────────
   { organ: 'lymph', name: '弥漫大B细胞淋巴瘤', polarity: 'malignant', familyOf: '淋巴瘤',
     aliases: ['弥漫性大B细胞淋巴瘤', '弥漫大B细胞淋巴瘤(纵隔型)', 'dlbcl', 'diffuse large b-cell lymphoma', 'diffuse large b cell lymphoma', '原发性纵隔大B细胞淋巴瘤', '原发纵隔大B细胞淋巴瘤', 'primary mediastinal large b-cell lymphoma', 'pmbl', '弥漫性大b'],
     evTokens: ['dlbcl', 'diffuse large b', 'large cell', 'b-cell', 'centroblast', 'large transformed cells', 'pmbl', '弥漫大'] },
@@ -289,7 +284,7 @@ export const DIAGNOSIS_SPECTRUM: SpectrumEntry[] = [
     aliases: ['reactive lymphoid hyperplasia', '淋巴组织反应性增生', '反应性增生', 'reactive lymphadenitis', '良性淋巴增生'],
     evTokens: ['reactive lymph', 'reactive hyperplasia', '反应性增生', 'polymorphic', 'follicular hyperplasia', 'reactive'] },
 
-  // ─────────────────────────── brain（4 例）─────────────────────────────────
+  // ─────────────────────────── brain ─────────────────────────────────
   { organ: 'brain', name: '胶质母细胞瘤（GBM）', polarity: 'malignant',
     aliases: ['胶质母细胞瘤', 'glioblastoma', 'gbm', 'glioblastoma multiforme', '多形性胶质母细胞瘤'],
     evTokens: ['glioblastoma', 'gbm', '胶质母细胞', 'pseudopalisading', '栅栏样', 'microvascular proliferation', 'glomeruloid', 'pleomorphic astrocytic', 'necrosis'] },
@@ -309,10 +304,9 @@ export const DIAGNOSIS_SPECTRUM: SpectrumEntry[] = [
     aliases: ['medulloblastoma', '髓母', '成髓细胞瘤'],
     evTokens: ['medulloblastoma', '髓母', 'medulloblastoma', 'small blue cell'] },
 
-  // ─────────────────────────── endometrium（10 例）─────────────────────────
-  // name 对齐 accept 规范名；FIGO 是分级体系非独立病种 → 收为别名（standalone name 会 0-hit）。
-  // 「子宫内膜癌」与「子宫内膜样腺癌」非子串关系，且是独立 gold（pub_histai_00001/01655/13043 只接受前者）
-  // → 必须单独成 entry，否则 LLM 说「子宫内膜癌」会被折叠成「子宫内膜样腺癌」而漏检。
+  // ─────────────────────────── endometrium ─────────────────────────
+  // FIGO 是分级体系非独立病种 → 收为别名。
+  // 必须单独成 entry，否则 LLM 说「子宫内膜癌」会被折叠成「子宫内膜样腺癌」而漏检。
   { organ: 'endometrium', name: '子宫内膜样腺癌', polarity: 'malignant',
     aliases: [
       '子宫内膜样癌', '子宫内膜样癌（FIGO）', '子宫内膜样腺癌（FIGO）', 'endometrioid carcinoma',
@@ -341,7 +335,7 @@ export const DIAGNOSIS_SPECTRUM: SpectrumEntry[] = [
     aliases: ['serous carcinoma', 'endometrial serous carcinoma', '浆液性癌', 'papillary serous'],
     evTokens: ['serous', '浆液', 'papillary', 'psammoma', 'hgb', 'high grade'] },
 
-  // ─────────────────────────── bladder（10 例）──────────────────────────────
+  // ─────────────────────────── bladder ──────────────────────────────
   { organ: 'bladder', name: '尿路上皮癌', polarity: 'malignant',
     aliases: ['膀胱尿路上皮癌', 'urothelial carcinoma', '膀胱癌', 'transitional cell carcinoma', '膀胱尿路上皮细胞癌', 'urothelium cancer'],
     evTokens: ['urothelial', '尿路上皮', 'transitional', 'papillary urothelial', 'hyperchromatic', 'pleomorphic', 'invasion', 'nested'] },
@@ -364,7 +358,7 @@ export const DIAGNOSIS_SPECTRUM: SpectrumEntry[] = [
     aliases: ['reactive urothelial atypia', 'reactive atypia', '尿路上皮反应性异型', '反应性异型', 'umbrella'],
     evTokens: ['reactive atypia', 'umbrella', 'reactive urothelium', '炎症', 'denudation', '未见癌'] },
 
-  // ─────────────────────────── kidney（2 例）─────────────────────────────────
+  // ─────────────────────────── kidney ─────────────────────────────────
   { organ: 'kidney', name: '肾细胞癌', polarity: 'malignant',
     aliases: ['透明细胞肾细胞癌', 'clear cell renal cell carcinoma', '肾癌', 'renal cell carcinoma', 'renal carcinoma', '透明细胞癌'],
     evTokens: ['clear cell', '透明', 'renal cell', '肾细胞', 'alpha', 'nest', 'vacuolated', 'clear cytoplasm', 'granular'] },
@@ -411,7 +405,7 @@ export const DIAGNOSIS_SPECTRUM: SpectrumEntry[] = [
     aliases: ['germ cell tumor', '经生殖细胞肿瘤', '非精原细胞瘤', 'embryonal', 'yolk sac', '畸胎瘤'],
     evTokens: ['germ cell', '生殖细胞', 'embryonal', 'yolk sac', 'teratoma'] },
 
-  // ─────────────────────────── cervix（3 例）────────────────────────────────
+  // ─────────────────────────── cervix ────────────────────────────────
   { organ: 'cervix', name: '宫颈上皮内瘤变', polarity: 'premalignant',
     aliases: ['宫颈上皮内瘤变（CIN）', 'cin', 'cervical intraepithelial neoplasia', '宫颈鳞状上皮内病变', 'lsil', 'hsil', 'cin2', 'cin3'],
     evTokens: ['cin', 'cervical intraepithelial', 'dysplasia', 'koilocytotic', 'abnormal', 'koliocytes', '上皮内瘤变'] },
@@ -493,11 +487,9 @@ export function resolveDiagnosis(name: string): SpectrumEntry | undefined {
   return SPECTRUM_INDEX.get(normName(name))
 }
 
-/** 常见→少见的器官诊断排序表（临床常见度为主 + 评测集 101 例频率校准）。key=name 必须与谱内规范名完全一致；
+/** 常见→少见的器官诊断排序表（临床常见度为主）。key=name 必须与谱内规范名完全一致；
  *  未列名的器官整段不排序、未列名的条目稳定垫尾（保谱内原相对序）。本表只影响 LLM 提示谱（spectrumFor 输出），
- *  不参与 diagnosticMatch/resolveDiagnosis（那些按 name/alias Map 命中，与顺序无关）。
- *  依据：2026-09-05 整理（评测集 101 例 per-organ 频率 + 病理临床常见度），目的=让决策 LLM「优先考虑排前的常见诊断」，
- *  符合临床 pre-test probability 启发式（见 DECISION_SYSTEM 规则 #4「诊断谱按常见→少见排列」）。 */
+ *  不参与 diagnosticMatch/resolveDiagnosis（那些按 name/alias Map 命中，与顺序无关）。 */
 const SPECTRUM_ORDER: Partial<Record<Cancer, string[]>> = {
   breast: ['浸润性导管癌（IDC）', '纤维腺瘤', '浸润性小叶癌（ILC）', '导管原位癌', '非典型导管增生', '浸润性癌', '保守性乳腺病变'],
   colon: ['结直肠癌', '结肠癌', '管状腺瘤', '绒毛状腺瘤', '无蒂锯齿状病变', '慢性结肠炎'],
@@ -527,16 +519,15 @@ export function spectrumFor(organ: Cancer | undefined): SpectrumEntry[] {
   // 常见→少见：按 SPECTRUM_ORDER 重排（未列名稳定垫尾）；未定义 order 的器官不排序（保谱内原序）
   if (order) matches.sort((a, b) => rankIn(order, a.name) - rankIn(order, b.name))
   // 器官特异与 siteNeutral 分开限长：siteNeutral（小细胞癌/淋巴瘤/转移性癌/腺样囊性癌/良性反应性病变）
-  // 是跨部位高价值鉴别候选，【永不截断】；旧实现把两类拼一起再 slice(0,15)，而 siteNeutral 垫尾——
-  // 一旦某器官特异项 ≥15（lung/soft_tissue 现 9 项，差 1 步），siteNeutral 会被整段截掉，转移/淋巴瘤/小细胞癌
-  // 全部从提示谱里消失。只对器官特异列表限长，大器官未来继续扩展也只丢尾部器官特异项，siteNeutral 恒在。
+  // 是跨部位高价值鉴别候选，【永不截断】。
+  // 只对器官特异列表限长，大器官未来继续扩展也只丢尾部器官特异项，siteNeutral 恒在。
   const ORGAN_CAP = 12
   const capped = matches.length > ORGAN_CAP ? matches.slice(0, ORGAN_CAP) : matches
   return [...capped, ...neutral]
 }
 
 // ============================================================================
-// 分层诊断命中评分（run_eval_v2 用）
+// 分层诊断命中评分
 // ============================================================================
 
 /** family root 集合 = siteNeutral 泛名 ∪ 被具体条目 familyOf 引用的名。 */

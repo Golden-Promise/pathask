@@ -1,6 +1,6 @@
 """STREAM RRTMIL（baselines_raw）MIL 推理——run_mil 工具的真实后端。
 
-特征协议（本会话实测锁定）：STREAM h5 特征 = CONCH `encode_image(normalize=False,
+特征协议：STREAM h5 特征 = CONCH `encode_image(normalize=False,
 proj_contrast=False)` 的 ln_contrast 池化（行范数≈√512≈22.65、全局 mean≈0/std≈1）。
 在线对任意 WSI 用同一 CONCH + 256×256 patch 抽特征喂 RRTMIL 权重，分布才对齐。
 训练 patch 从 level0 直接切 256（STREAM h5 的 coords 是 level0 像素坐标）。
@@ -28,12 +28,12 @@ FEATURE_DIR = ROOT / "data" / "features"
 # STREAM 模型根目录（含 models.mil_classifiers）。环境变量注入；未设置时运行时给出清晰错误，避免空路径污染 sys.path。
 STREAM = os.environ.get('PATHASK_STREAM_ROOT', '').rstrip('/')
 
-BATCH_SIZE = 16          # CONCH 单次 batch patch 数（CPU 实测后调）
+BATCH_SIZE = 16          # CONCH 单次 batch patch 数
 TISSUE_FRAC_MIN = 0.3    # patch 组织占比阈值（与 build_similar_case_index 一致）
 PATCH_SIZE = 256         # level0 直切 256×256（STREAM 训练规格）
-DEFAULT_MAX_PATCHES = 1024  # 等距采样 patch 数（Phase 3e 验证：1024 与 4096/全量预测一致）
-N_WORKERS = 8            # 并行抽特征 worker 数（host1 96 核，每 worker 6 线程）
-N_THREADS = 6            # 每 worker torch 线程上限（不限则 96 线程风暴互相争抢，实测更慢）
+DEFAULT_MAX_PATCHES = 1024  # 等距采样 patch 数
+N_WORKERS = 8            # 并行抽特征 worker 数（每 worker 6 线程）
+N_THREADS = 6            # 每 worker torch 线程上限（不限则线程风暴互相争抢）
 
 # 常驻进程池：CONCH-224 + slide 句柄按 worker 懒加载，首抽付一次性加载成本，之后复用
 _pool = None
@@ -58,7 +58,7 @@ def get_capability(cap_id: str) -> dict:
 
 
 def get_model(cap: dict) -> torch.nn.Module:
-    """懒加载 RRTMIL 权重（按 capability_id 缓存）。超参=工厂默认（已实测与训练一致）。"""
+    """懒加载 RRTMIL 权重（按 capability_id 缓存）。超参=工厂默认。"""
     cap_id = cap["id"]
     if cap_id in _models:
         return _models[cap_id]
@@ -74,7 +74,7 @@ def get_model(cap: dict) -> torch.nn.Module:
         "model": {"classifier": {"name": cap["model_arch"]}},
     }
     model = get_mil_classifier(cfg)
-    # capability_registry.json 存 STREAM 相对路径（发布去私有前缀）；加载时拼 STREAM 根
+    # capability_registry.json 存 STREAM 相对路径；加载时拼 STREAM 根
     model_path = cap["model_path"]
     if not os.path.isabs(model_path):
         model_path = os.path.join(STREAM, model_path)
@@ -136,8 +136,7 @@ def extract_features(slide, mask: np.ndarray, max_patches: int = DEFAULT_MAX_PAT
     """对 WSI 抽 STREAM 规格特征：level0 直切 256×256 组织 patch → CONCH raw。
 
     返回 (features (N,512) float32, coords (N,2) int64[左上角 level0 坐标], 组织候选数)。
-    候选保持网格空间序，max_patches 用**等距采样**覆盖全片（Phase 3e 验证：1024 等距与
-    4096/全量预测一致；此前按组织占比 top 取会让 patch 聚集在密区，预测漂移）。
+    候选保持网格空间序，max_patches 用**等距采样**覆盖全片。
     有 abs_path 时走常驻进程池并行（每 worker 限 N_THREADS 线程）；无则主进程串行兜底。
     """
     lvl_w, lvl_h = slide.level_dimensions[0]

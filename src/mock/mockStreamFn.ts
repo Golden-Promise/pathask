@@ -139,7 +139,7 @@ const R3 = { id: 'r3', slide_id: 'slide_brca_001', x: 8900, y: 7200, w: 1024, h:
 /** 场景 A：乳腺强证据路径（感知 → 临床 + 证据链 + 报告）
  *  ⚠️ 流程必须只用**当前注册的工具集**（createTools 的 10 件）驱动：脚本里写未注册的工具
  *  （inspect_region / describe_patch / run_mil）只会拿到一条 "tool not found" 结果，
- *  静默什么都不产出 —— 那正是 smoke 里「证据节点 ≥ 8 → 实得 5」的真因（2026-09-11 修正）。 */
+ *  静默什么都不产出。 */
 export const FLOW_BREAST_STRONG: ScriptFlow = {
   primary: [
     { tool: 'scan_overview', arguments: { slide_id: 'slide_brca_001' } },
@@ -183,7 +183,7 @@ export const FLOW_COUNTERFACTUAL: ScriptFlow = {
     { tool: 'detect_roi', arguments: { slide_id: 'slide_brca_001', question: '寻找可疑浸润灶' } },
     { tool: 'perceive', arguments: { question: '描述细胞形态' } },
     { tool: 'analyze_evidence', arguments: {} },
-    // evidence_id 传空 = 让工具自选（优先「方向相反」的投票证据，无则最高置信）——旧值 'ev-mil-1' 是 run_mil 时代的硬编码 id
+    // evidence_id 传空 = 让工具自选（优先「方向相反」的投票证据，无则最高置信）
     { tool: 'counterfactual', arguments: { evidence_id: '' } },
     { tool: 'generate_report', arguments: {} },
   ],

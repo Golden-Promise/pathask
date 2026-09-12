@@ -36,7 +36,7 @@ src/
 │   ├── governance.ts        循环治理：步数/token/VLM 预算、重复指纹、无进展与振荡检测
 │   ├── fingerprint.ts       工具调用规范化参数指纹（判「同参重复」）
 │   ├── siliconflowStreamFn.ts  编排 LLM 的流式适配（OpenAI 兼容）
-│   └── compactContext.ts    上下文压缩（⚠️ 默认关，见「已证伪项」）
+│   └── compactContext.ts    上下文压缩（⚠️ 默认关）
 ├── tools/         10 个 AgentTool
 ├── wsi/           WSI 接入：桥接客户端、ROI 采样、导航器、CONCH/PLIP 检索
 ├── util/          resilience.ts（端点熔断 + 瞬时故障重试预算）、llmEndpoint.ts（端点判定）
@@ -44,7 +44,7 @@ src/
 ├── knowledge/     知识库检索
 ├── data/          诊断谱（器官 → 疾病词表 + 形态证据签名）
 ├── mock/          无真实模型时的离线桩
-└── runner.ts      单病例编排（含 F5 热点闭环、双倍率复核等非 agent 直调的路径）
+└── runner.ts      单病例编排（含热点闭环、双倍率复核等非 agent 直调的路径）
 
 wsi-bridge/        TS 调不动 OpenSlide，用这个 FastAPI 薄桥把 WSI 读取暴露成 HTTP
 ```
@@ -55,7 +55,7 @@ wsi-bridge/        TS 调不动 OpenSlide，用这个 FastAPI 薄桥把 WSI 读�
 |---|---|
 | `scan_overview` | 低倍全览：缩略图 + 组织掩膜 + 候选网格 |
 | `detect_roi` | 按打分挑候选 ROI（默认 blend = 核密度 + 组织密度），返回 `region_ref` |
-| `perceive` | **单次「切块 + 批量 VLM 描述」**，替代旧的 `inspect_region → describe_patch` 两步，省一次 agent 往返 |
+| `perceive` | **单次「切块 + 批量 VLM 描述」**，替代 `inspect_region → describe_patch` 两步，省一次 agent 往返 |
 | `verify_region` | 带假设的复核：对某区域问「是否见到 X」，返回 支持/质疑/不确定 |
 | `query_clinical` | 临床信息检索 |
 | `query_knowledge` | 知识库检索 |
@@ -65,7 +65,7 @@ wsi-bridge/        TS 调不动 OpenSlide，用这个 FastAPI 薄桥把 WSI 读�
 | `generate_report` | 收尾：产出结构化报告 |
 
 > `inspect_region` / `describe_patch` 仍在源码里，但**不再暴露给 agent**——由 `runner.ts` 的内部路径
-> （F5 热点闭环、P4 双倍率复核）直接调用。`run_mil` 已下线（专病模型全癌种覆盖不现实），从工具集撤下。
+> （热点闭环、双倍率复核）直接调用。
 
 ### 两个模型分工
 
@@ -125,7 +125,7 @@ npm run dev        # tsx src/main.ts
 
 > ⚠️ 本仓库**不是一个开箱即跑的 demo**：跑通需要自备 (1) 一个 WSI 登记表 + 切片原片、
 > (2) 一个病理 VLM 端点、(3) 一个决策 LLM 端点（或 API key）。缺任一项时 `src/mock/` 提供离线桩，
-> 但那只验证接线，不代表真实读片能力。私有树里的 smoke / 评测 harness / 数据构建脚本不在此仓库。
+> 但那只验证接线，不代表真实读片能力。评测 harness 与数据构建脚本不在此仓库。
 
 ---
 
@@ -136,7 +136,7 @@ npm run dev        # tsx src/main.ts
 
 - **端点分派三件事**（`src/util/llmEndpoint.ts`）：切到自建端点时，**代理**（undici 的 `ProxyAgent`
   **不读** `NO_PROXY`，内网端点必须不挂 dispatcher）、**思考字段**（vLLM 顶层 `enable_thinking` 是空操作，
-  必须发 `chat_template_kwargs`）、**超时默认**（抽签端点 240s → 稳定端点 120s）三件事必须一起变。
+  必须发 `chat_template_kwargs`）、**超时默认**（240s → 120s）三件事必须一起变。
 - **熔断只治「别再付第二次」**（`resilience.ts`）：连接类失败是服务死亡的**无歧义**证据 → 直接记服务级；
   超时是**模糊**证据 → 先归 (端点, slide)，窗口内够多张**不同**片子都超时才升级为服务级
   （否则一张病态巨片能判死整个服务）。业务类 4xx **不进熔断**——那是数据问题不是健康信号。
@@ -144,18 +144,9 @@ npm run dev        # tsx src/main.ts
   超时 → 回落规则投票，而不是偷偷重发。
 - **降级证据出局投票**：超时/截断产生的部分证据会被标记，**不计入投票**。
 - **循环治理是防御性的**（`governance.ts`）：观测类默认开且零行为改动，干预类一律 env 门控。
-  在真实基线上重复调用只占 6.2%、无病例撞步数上限——治理的价值是**堵住可能发生的失控**。
+  治理的价值是**堵住可能发生的失控**，以及让循环本身可度量。
 - **采样打分用核密度而非裸组织密度**：`tissue_fraction` 会把纤维/平滑肌/空白都算「组织」，
   核密的癌灶反而排名低 → 采样系统性偏向良性结缔组织。默认 `PATHASK_ROI_SCORE=blend`（0.6×核密度 + 0.4×组织密度）。
-
-### 已证伪项（留在源码里，但默认关闭，别重复踩）
-
-- **上下文压缩**：`PATHASK_CTX_COMPACT=1` 在全量 101 例上把弃诊从 4.9% 推到 45.9%、
-  方向率从 59% 打到 23%。机制是折叠历史 → agent 提前收手 → 决策空虚 → 弃诊。
-  **离线探针全绿但测不出行为回归**——源码保留，仅供将来以「证据库感知」的形态重启。
-- **`run_mil` 专病分类器**：已从工具集下线。覆盖 24 器官多个分子分型不现实，统一走
-  `perceive` + 检索 + 分析的通用路径。
-- **廉价 CONCH 病灶性打分**：恶性词库 +0.067 / 跨片 prototype −0.131，被证伪；改用覆盖式 + 密度 + 多样性采样。
 
 ---
 

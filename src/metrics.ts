@@ -1,4 +1,4 @@
-/** 会话级指标（Phase 6.3）：工具耗时 / LLM token / VLM 调用 → 单次阅片成本摘要（简历素材）。
+/** 会话级指标：工具耗时 / LLM token / VLM 调用 → 单次阅片成本摘要。
  *  挂 PathAskSession.metrics，由 runner subscribe 工具事件计时、streamFn message usage 聚合。 */
 
 export interface ToolStat {
@@ -7,12 +7,12 @@ export interface ToolStat {
   totalMs: number
   p50Ms: number
   p95Ms: number
-  /** 失败调用数（`isError` 通道此前零消费者 → 失败在指标里完全不可见；2026-09-10 补齐） */
+  /** 失败调用数 */
   failures: number
   errorsByCode: Record<string, number>
 }
 
-/** 分端点（bridge/vlm/llm）的分位数（Step 0，2026-09-11）。
+/** 分端点（bridge/vlm/llm）的分位数。
  *  `tools`/`tool_ms` 只到**工具**粒度，答不了「这 451s 是桥端掩膜重算、VLM 排队、还是决策 LLM 多转了两轮」。
  *  自适应阈值在没这个之前全是拍脑袋——这是它的**存在理由**，也是熔断阈值的唯一依据。 */
 export interface EndpointStat {
@@ -108,7 +108,7 @@ export class SessionMetrics {
     this.vlmCalls++
   }
 
-  /** 工具失败一次（makeTool 的 catch / softError → recordToolError 调用）。失败计数此前完全缺失。 */
+  /** 工具失败一次（makeTool 的 catch / softError → recordToolError 调用）。 */
   toolFail(_callId: string, tool: string, code: string): void {
     this.toolErrors++
     this.toolErrorsByCode[code] = (this.toolErrorsByCode[code] ?? 0) + 1

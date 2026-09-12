@@ -1,6 +1,6 @@
 /** 证据置信度规范范围（见 docs/evidence-confidence-spec.md）。
  *
- *  P0 病灶：describe/verify 的 confidence 是被当成概率读的"手工档"（0.35/0.55/0.7/0.75/0.78/0.8/0.9），
+ *  describe/verify 的 confidence 是被当成概率读的"手工档"（0.35/0.55/0.7/0.75/0.78/0.8/0.9），
  *  在决策 LLM prompt（conf=…）与 evidenceConfidence 聚合里当权重用，编码的是 verdict 方向 + 档位而非校准确定度。
  *  本模块把该档位钉成具名锚点：**方向由 polarity 承重，confidence 只作权重/量级 cue，不决定良恶**。
  *
@@ -8,7 +8,7 @@
  *  下限不落到 0（总有观察；无形态证据走"排除"而非"低置信"，见 degenerate/stub 处理）。
  *
  *  ⚠️ 与决策层隔离：本锚点只约束 VLM 形态/复核的【观察证据节点】；主诊断置信
- *  （analyzeEvidence.ts:806 clamp01(ai.confidence)，决策 LLM 自报）是另一套，归 P0 决策层校准，
+ *  （analyzeEvidence 的 clamp01(ai.confidence)，决策 LLM 自报）是另一套，
  *  不在此钳制范围内、也勿用本锚点。run_mil（模型级、聚合权重×2）同理不受本上限约束。 */
 export const CONF_ANCHORS = {
   /** 几乎无形态信息 → 应排除（degenerate/emptyMorph）而非赋低置信 */

@@ -10,7 +10,7 @@ import { cachePatches } from '../wsi/patchCache'
  *  真实 detect_roi ROI（放大到基底像素）远大于此值，不会误伤。 */
 const MIN_REGION_DIM = 64
 
-/** 3. 区域切块：在指定倍率切取 patch_refs，写入会话 patchCache。
+/** 区域切块：在指定倍率切取 patch_refs，写入会话 patchCache。
  *  真实路径：按目标倍率选 OpenSlide 层级 → 网格切块 → patch 真读并写盘（data/.cache/patch/）。
  *  mock 路径：预置 4 个 patch（smoke 用）。 */
 export const inspectRegionSpec: ToolSpec<typeof InspectRegionSchema> = {
@@ -24,7 +24,7 @@ export const inspectRegionSpec: ToolSpec<typeof InspectRegionSchema> = {
   metadata: { category: 'acquisition', cacheable: true, idempotent: true, depends_on: ['detect_roi'] },
   execute: async (params, ctx) => {
     // ⭐ 解析 region：优先显式 region{}，否则用 region_ref 从 detect_roi 缓存确定性取坐标
-    //   （LLM 手抄 x/y/w/h/magnification 六字段是采错区 09523/20091 的根因，把坐标解析交给代码）。
+    //   （LLM 手抄 x/y/w/h/magnification 六字段是采错区的根因，把坐标解析交给代码）。
     let region = params.region
     if (!region && params.region_ref) {
       region = findRegionByRef(ctx.session.roiCache, params.region_ref)
@@ -54,7 +54,7 @@ export const inspectRegionSpec: ToolSpec<typeof InspectRegionSchema> = {
     // ===== 真实路径 =====
     const rw = realWsi(ctx, region.slide_id)
     if (rw) {
-      // C 循环护栏：同一区域 + 同一倍率已切块 → 直接复用缓存（幂等），不重读 WSI、不重叠证据，
+      // 循环护栏：同一区域 + 同一倍率已切块 → 直接复用缓存（幂等），不重读 WSI、不重叠证据，
       // 避免 model 在 describe 失败后反复 inspect 同一 region 烧预算、堆证据。
       const existing = ctx.session.patchCache.get(region.id)
       if (existing?.length && existing[0].magnification === region.magnification) {

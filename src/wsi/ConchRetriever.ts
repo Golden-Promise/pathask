@@ -27,7 +27,7 @@ export async function conchRetrieveRois(
   const centers = cells.map((c) => ({ x: Math.round(c.x * scale), y: Math.round(c.y * scale) }))
 
   // 读图 + CONCH 编码。串行循环逐轮查 abort：agent 中止/工具预算到点时**返回已得部分**（由调用方兜底），
-  // 不把整条读图循环跑完（此前无 signal、无 break，一次挂起能拖满整例预算）。
+  // 不把整条读图循环跑完。
   const images: string[] = []
   for (const c of centers) {
     if (signal?.aborted) break

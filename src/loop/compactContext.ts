@@ -1,9 +1,8 @@
 /**
- * Lever 2 —— 编排 loop 的「有界上下文压缩」。
+ * 编排 loop 的「有界上下文压缩」。
  *
  * 病根：agent 每轮把「已累积的全部消息历史」原样重发给 Qwen3-8B（无跨轮记忆，每轮重发增长中的输入），
- * 实测 ~15 轮、消息 +2/轮，输入 token 随轮数近似线性增长（全量 49.9k in 里 messages 占 ~72%）。
- * 这正是墙钟「编排 loop 余量」的来源之一：靠后的轮每轮重发的上下文最大。
+ * 输入 token 随轮数近似线性增长。
  *
  * 方案：作为 pi-agent-core `transformContext`（每轮 LLM 调用前对 messages 生效一次），
  * 当历史超预算时把最旧的「完整 turn」(`assistant(tool_calls)` + 其 `toolResult`s) 折叠成一行紧凑摘要，
@@ -16,9 +15,9 @@
  *  - 折叠摘要插入为正数第一段 user 消息（在首条问题后、首个保留 assistant 前）——user 后可接 assistant(tool_calls)，
  *    OpenAI 交替合法；末条保持 user/toolResult（当前 turn 依赖）。
  *
- * 证据库感知（2026-09-08）：toolResult 原文若能用 toolCallId 定位到会话证据节点，就用节点的【归纳句 gist】
- * 替代原文 slice(0,80)。旧 slice 从头取 80 字会砍掉 VLM 末尾归纳句（ruleMatch/genericScore 赖以打票的倾向
- * 信号），而保真 claim 又让节点 ~560 字、且 agent 每轮重复重放。归纳句 = 保真 claim 里信息价值最高的一句——
+ * 证据库感知：toolResult 原文若能用 toolCallId 定位到会话证据节点，就用节点的【归纳句 gist】
+ * 替代原文 slice(0,80)。slice 从头取 80 字会砍掉 VLM 末尾归纳句（ruleMatch/genericScore 赖以打票的倾向
+ * 信号）。归纳句 = 保真 claim 里信息价值最高的一句——
  * 「证据感知」而非「位置截断」。定位不到（如 describe 缓存回放未走 addEvidence、非证据类工具结果）回退原文 slice。
  *
  * 语义边界：gist 只做「提取+去套话」，**不产 conf、不产 polarity**（归纳句里的 benign/malignant 是 VLM 读出的
@@ -102,8 +101,7 @@ export function makeEvidenceLookup(store: EvidenceStore): EvidenceLookup {
 }
 
 /** 把一组消息折叠成一行「已执行」摘要。首个问题原样保留，只折叠其后的 turn。
- *  toolResult 若能经 lookup（toolCallId → 证据节点）取到归纳句，就用它替代原文 slice(0,80)——
- *  旧 slice 从头取 80 字砍掉 VLM 末尾归纳句（ruleMatch/genericScore 打票的倾向信号），保真 claim 又让节点 ~560 字。 */
+ *  toolResult 若能经 lookup（toolCallId → 证据节点）取到归纳句，就用它替代原文 slice(0,80)。 */
 function foldTurns(turns: AgentMessage[], prevProblem: string, lookup?: EvidenceLookup): { summary: string; dropped: number } {
   const lines: string[] = []
   let dropped = 0
@@ -163,8 +161,8 @@ function splitTurns(messages: AgentMessage[]): { lead: AgentMessage[]; turns: Ag
 }
 
 /** transformContext 用：有界压缩（env 门控 + 预算 + 最近 K 轮保留）。
- *  evidenceLookup：toolCallId → 证据节点最小信息；由调用方闭包捕获 session.evidenceStore 构造
- *  （agent_real.ts / eval_core.ts）。传入后折返 gist 可用归纳句，否则退化为原文 slice。 */
+ *  evidenceLookup：toolCallId → 证据节点最小信息；由调用方闭包捕获 session.evidenceStore 构造。
+ *  传入后折返 gist 可用归纳句，否则退化为原文 slice。 */
 export function compactContext(messages: AgentMessage[], evidenceLookup?: EvidenceLookup): AgentMessage[] {
   if (process.env.PATHASK_CTX_COMPACT !== '1') return messages
   const budget = Number(process.env.PATHASK_CTX_KEEP_TOKENS ?? '12000')

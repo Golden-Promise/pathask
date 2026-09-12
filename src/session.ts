@@ -14,7 +14,7 @@ const MOCK_SLIDE_CANCER: Record<string, Cancer> = {
   slide_phyllodes_001: 'phyllodes',
 }
 
-/** mock 会话：smoke / 无真实 WSI 时用（Phase 1 骨架延续） */
+/** mock 会话：smoke / 无真实 WSI 时用 */
 export function createSession(slideId = 'slide_brca_001'): PathAskSession {
   const capabilityRegistry = new Map<string, Capability>()
   for (const c of MOCK_CAPABILITIES) capabilityRegistry.set(c.id, c)
@@ -63,11 +63,11 @@ export function createRealSession(slideId?: string): PathAskSession {
     roiCache: new Map(),
     metrics,
     capabilityRegistry: loadCapabilityRegistry(), // STREAM 真注册表（data/capability_registry.json）
-    clinicalData: MOCK_CLINICAL, // Phase 3 换真实临床表（TCGA/卵巢/叶状 CSV）
+    clinicalData: MOCK_CLINICAL,
     knowledgeBase: loadKnowledgeBase(), // 策划病理知识库（data/knowledge_base.json）
     similarCaseIndex: MOCK_SIMILAR,
     wsiRegistry: registry,
-    // 桥接每次 HTTP 都记一笔分端点耗时（Step 0）——桥在最内层，只有它自己知道是哪条路径慢
+    // 桥接每次 HTTP 都记一笔分端点耗时——桥在最内层，只有它自己知道是哪条路径慢
     wsiClient: new WsiClient(undefined, metrics),
     toolErrors: [],
   }

@@ -1,6 +1,6 @@
 """PLIP/病理编码器（懒加载）——给 wsi-bridge 的 /embed 端点用。
 
-模型权重在 PLIP_PATH（环境变量指定，已验证可加载）。
+模型权重在 PLIP_PATH（环境变量指定）。
 CLIP 式 image/text 双塔：图片和文本进同一空间，余弦相似度做检索。
 """
 import base64

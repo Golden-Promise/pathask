@@ -1,6 +1,6 @@
 import type { Capability, Uncertainty } from '../types'
 
-/** 每步 LLM 输出的结构化决策（内联 JSON，Phase 2 起严格校验） */
+/** 每步 LLM 输出的结构化决策（内联 JSON） */
 export interface LoopStepDecision {
   difficulty_estimate?: 'simple' | 'complex'
   hypothesis?: { claim: string; confidence: number }
@@ -11,21 +11,14 @@ export interface LoopStepDecision {
   rationale?: string
 }
 
-/** B6：预算收尾段开关（**默认开**）。关闭只认显式关闭值——与 `loopGuardEnforce`/`scanCacheRead`
- *  同一套约定：写错一个字不该静默把一段 prompt 摘掉。A/B 时它就是"这段文案有没有用"的对照臂。 */
+/** 预算收尾段开关（**默认开**）。关闭只认显式关闭值——与 `loopGuardEnforce`/`scanCacheRead`
+ *  同一套约定：写错一个字不该静默把一段 prompt 摘掉。 */
 function promptBudgetClause(): boolean {
   const raw = process.env.PATHASK_PROMPT_BUDGET_CLAUSE
   if (raw === undefined || raw.trim() === '') return true
   return !/^(0|false|off|no)$/i.test(raw.trim())
 }
 
-/** 【预算收尾】段（B6，2026-09-11）。它存在的理由是**两条既有约束之间的死结**：
- *  上面「证据裁决」禁止"因证据不合预期就以证据不足收尾"，而「收尾强制」要求必须走 generate_report——
- *  预算耗尽时模型同时被这两条夹住，历史教训里的"决策收紧 → 待评估 → 方向错"正是这种死结被硬解开的产物。
- *  出口开在**投票引擎内部**而不是绕过它：即使个人认为证据不足也必须让投票引擎裁决，
- *  报告可带 insufficient_evidence + request_human（那是裁决结果，不是免责声明）。
- *  → 弃诊没有被重新引入（出口仍经投票 + 报告契约，`ensureStructuredReport` 照旧兜底），
- *  而模型拿到一个被授权的、预算感知的终止动作。收紧的价值是**安全护栏**，不是分数。 */
 const BUDGET_CLAUSE = `## 预算收尾（唯一合法的提前收尾）
 上一条不是"无论如何都要继续采样"：步数/用量将尽，或连续多步没有新增证据时，你**不再需要**继续收集。
 此时的收尾动作只有一个：analyze_evidence →（可选 counterfactual）→ generate_report。

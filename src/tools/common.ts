@@ -19,14 +19,14 @@ export interface ToolExecuteCtx {
   signal?: AbortSignal
   /** 进度上报（工具 → 包装层）。包装层**只用来记 partial 的 k/n，不转发给框架**（避免引入框架新事件类型）。 */
   onUpdate?: (progress: { done: number; total?: number }) => void
-  /** 调用来源（B1）：`makeTool` 传 agent、`runSystemTool` 传 programmatic。
-   *  可选——探针与测试直接构造 ctx 时不传，视为 programmatic（**默认绝不让未标注的调用触发拦截**）。 */
+  /** 调用来源：`makeTool` 传 agent、`runSystemTool` 传 programmatic。
+   *  可选——测试直接构造 ctx 时不传，视为 programmatic（**默认绝不让未标注的调用触发拦截**）。 */
   origin?: 'agent' | 'programmatic'
 }
 
-/** 供指纹层解析引用用的只读视图（B1）。**故意不 import 指纹层**——把三个既有查找函数
+/** 供指纹层解析引用用的只读视图。**故意不 import 指纹层**——把三个既有查找函数
  *  以接口注入，避免「工具层要用指纹记台账 / 指纹要用工具层的查找」成环，实现仍只有一份。
- *  B4 起**导出**：`beforeToolCall` 门禁算指纹时也必须走这同一套解析，否则「门禁算出的 canonical」
+ *  `beforeToolCall` 门禁算指纹时也必须走这同一套解析，否则「门禁算出的 canonical」
  *  与「台账里记的 canonical」会分叉——而门禁的全部判据就是那个 canonical。
  *  ⚠️ `makeRefResolver` 是只读快照视图（`regions()` 每次现取），但 `region()/patch()` 内部查的是
  *  session 上的 Map 引用，故**每次判调用前现建一个**（`agentFactory` 就是这么用的），不要跨轮缓存。 */
@@ -59,18 +59,18 @@ export interface ToolSpec<T extends TSchema> {
 
 /**
  * 统一包装为 pi AgentTool。三条职责：
- *  1. **补 4 参数**：框架的 `execute(toolCallId, params, signal?, onUpdate?)` 此前只被声明 2 个参数，
- *     `signal`/`onUpdate` 被静默丢弃 → `agent.abort()` 打断不了在途工具。现在把 signal 透进 ctx。
+ *  1. **补 4 参数**：框架的 `execute(toolCallId, params, signal?, onUpdate?)` 只声明 2 个参数，
+ *     `signal`/`onUpdate` 被静默丢弃 → `agent.abort()` 打断不了在途工具。本包装把 signal 透进 ctx。
  *  2. **逐工具预算**：`AbortSignal.any([agentSignal, 自己的 timeout])`；到点即中断下游 fetch/VLM。
  *  3. **错误分类 + 账本**：catch → `classifyToolError` → 结构化文本 re-throw（框架把它原样当 tool-result
- *     文本回给模型，isError=true）+ 写 `session.toolErrors` + `metrics.toolFail`。**刻意不自动重试**
- *     （用户决策）：重试与否由模型读到「可否重试」后自行决定。
+ *     文本回给模型，isError=true）+ 写 `session.toolErrors` + `metrics.toolFail`。**刻意不自动重试**：
+ *     重试与否由模型读到「可否重试」后自行决定。
  *
- * ⚠️ 不要给框架接 `afterToolCall`：`agent-loop.ts:747-750` 里它一旦 throw 会**丢掉真实 tool result**。
- *    错误处理全部在本层完成，不依赖任何 pi-agent 钩子（probe_tool_errors.ts 有断言守住）。
+ * ⚠️ 不要给框架接 `afterToolCall`：它一旦 throw 会**丢掉真实 tool result**。
+ *    错误处理全部在本层完成，不依赖任何 pi-agent 钩子。
  */
 export function makeTool<T extends TSchema>(spec: ToolSpec<T>, session: PathAskSession): AgentTool<T> {
-  // B4：登记元数据。`beforeToolCall` 门禁要对**还没执行过**的调用判重复策略，
+  // 登记元数据。`beforeToolCall` 门禁要对**还没执行过**的调用判重复策略，
   // 而 metadata 长在 spec 上、governance 层又够不着它（反向 import 成环）——登记簿是这个环的破法。
   // 放在 makeTool 里而不是各工具模块的顶层：登记点是「工具被真正包装成 AgentTool」这个动作本身，
   // 与执行路径同源，不会出现「工具在跑但没登记」。
@@ -88,12 +88,12 @@ export function makeTool<T extends TSchema>(spec: ToolSpec<T>, session: PathAskS
   }
 }
 
-/** 重复调用的**提示行**（B4）：`hint` 策略工具（perceive / verify_region）的重复**永不拦**
+/** 重复调用的**提示行**：`hint` 策略工具（perceive / verify_region）的重复**永不拦**
  *  ——非确定性采样重复一次是有诊断价值的——但也不该让模型意识不到自己在重复。
  *
  *  **改的是 tool result 文本，所以边界必须干净**：只在 `loopGuardEnforce()` 打开、策略是 `hint`、
  *  且 `repeatIndex > 0`（确实重复过）时才加前缀；`block` 策略轮不到这里（门禁已拦），
- *  `exempt` 是程序化补跑/F4 重跑，加提示纯属噪音。前缀**另起一行并以 `【` 开头**，
+ *  `exempt` 是程序化补跑，加提示纯属噪音。前缀**另起一行并以 `【` 开头**，
  *  与工具自身的观测正文一眼可分——正文本身一个字都不动。
  *
  *  ⚠️ 这里**只动模型可见的文本**，不动 `digest`（台账里存的是原文本）：`digest` 会被拼进「你上次
@@ -108,7 +108,7 @@ function withRepeatHint(text: string, rec: LoopCallRecord, tool: string): string
 /** 预算 + 失败分类 + 账本 的**公共执行体**（`makeTool` 与 `runSystemTool` 共用，语义只此一份）。
  *  返回 spec 自己的 `{text, details}`；失败时抛结构化文本（调用方决定怎么接）。
  *
- *  `origin`（B1，2026-09-11）区分「模型发起」与「系统补跑」：只有 agent-origin 的调用才进重复/停滞统计
+ *  `origin` 区分「模型发起」与「系统补跑」：只有 agent-origin 的调用才进重复/停滞统计
  *  ——`analyze_evidence` 每例 ≥2 次是 `ensureStructuredReport` 的设计，把它算成重复就是在惩罚正确行为。 */
 async function guardedExecute<T extends TSchema>(
   spec: ToolSpec<T>,
@@ -126,7 +126,7 @@ async function guardedExecute<T extends TSchema>(
   const ctxSignal = signal ? AbortSignal.any([signal, own.signal]) : own.signal
   const startedAt = Date.now()
   let lastProgress: { done: number; total?: number } | undefined
-  // 账本（B1）：指纹在**执行前**算（此时参数已是校验后的静态类型），证据增量在执行后比。
+  // 账本：指纹在**执行前**算（此时参数已是校验后的静态类型），证据增量在执行后比。
   const fp = fingerprintToolCall(spec.name, params, makeRefResolver(session))
   const priorKeys = new Set(session.evidenceStore.allNodes().filter(countsAsProgress).map(evidenceKey))
   // 证据增量：只数**本次 toolCallId 产生的**节点——批次是并行的，全局集合差会把别的工具的
@@ -144,7 +144,7 @@ async function guardedExecute<T extends TSchema>(
       tool: spec.name, origin, fingerprint: fp.key, canonical: fp.canonical, label: fp.label,
       policy: resolveRepeatPolicy(spec.name, spec.metadata),
       newEvidenceKeys: freshCount(), cacheHit, ms,
-      // digest（B4）：同参数被重复门禁拦下时，拦下理由要能说「你上次拿到的是这句」。
+      // digest：同参数被重复门禁拦下时，拦下理由要能说「你上次拿到的是这句」。
       // 只截长度、不改内容——它是给模型看的**原始结果**，任何加工都会让「被拦 ≠ 信息丢失」打折。
       digest: digest ? digest.replace(/\s+/g, ' ').trim().slice(0, 240) : undefined,
     })
@@ -180,9 +180,9 @@ async function guardedExecute<T extends TSchema>(
       budgetMs: timedOut ? budgetMs : undefined,
       elapsedMs: timedOut ? elapsedMs : undefined,
       partial,
-      // Step 2：瞬时故障预算的**唯一扣减点**（工具 throw 路径）。语义类 code 不扣（见 TRANSIENT_CODES）。
+      // 瞬时故障预算的**唯一扣减点**（工具 throw 路径）。语义类 code 不扣（见 TRANSIENT_CODES）。
       transientFor: (code) => consumeTransientBudget(session, code),
-      // B6：语义重复计数的**唯一读取点**（工具 throw 路径）。只读不写、不消费令牌——
+      // 语义重复计数的**唯一读取点**（工具 throw 路径）。只读不写、不消费令牌——
       // 它改的是文案（「可否重试」→「别再原样重放同一个 id」），不是可用工具集。
       semanticRepeatFor: (code) => semanticRepeatState(session, spec.name, code),
     })
@@ -203,13 +203,8 @@ async function guardedExecute<T extends TSchema>(
 }
 
 /**
- * **系统调用**执行器（runner.ts 的确定性兜底层，2026-09-11）：走与 `makeTool` 同一套
+ * **系统调用**执行器：走与 `makeTool` 同一套
  * 「预算 + 分类 + 账本」，只是**不接框架**——直接把 spec 的 `{text, details}` 返回来。
- *
- * 之前这些调用（`sys-*`）是裸 `spec.execute(params, {session, toolCallId})`：
- *  - **无预算**：只有 VLM/LLM fetch 自己的内部超时兜底，桥接调用（无 signal）连超时都没有；
- *  - **无账本**：失败只留一句 `console.warn`，评测里完全看不到 `sys-*` 出过事；
- *  - **无分类**：`e.message` 原样打印，没有人知道该怎么改。
  *
  * 抛错语义与 `makeTool` 一致（结构化文本 re-throw）是**刻意的**：runner 的 8 处调用点**都**已包在
  * try/catch 里，且各自的 catch 本就是「失败即降级」分支（不阻塞报告 / markUnresolved / continue）——
@@ -258,9 +253,7 @@ function stripWsExt(id: string): string {
   return i > id.lastIndexOf('/') ? id.slice(0, i) : id // 只剥最后一层点的后缀，路径中段点不剥
 }
 
-/** 剥目录前缀取 basename（含 `/` 的 id 如 `histai/HISTAI-mixed/case_X` → `case_X`）。
- *  fix-D：agent 常把带目录前缀的 slide_id 塌缩成 basename（case_00001/20091 弃诊根因之一），
- *  桥端 _resolve 与 WsiClient.normalizeSlideId 已容忍，TS 侧 resolveWsiId/realWsi/findRegionByRef 一直缺失。 */
+/** 剥目录前缀取 basename（含 `/` 的 id 如 `histai/HISTAI-mixed/case_X` → `case_X`）。 */
 function baseId(id: string): string {
   const i = id.lastIndexOf('/')
   return i >= 0 ? id.slice(i + 1) : id
@@ -273,7 +266,7 @@ export function resolveWsiId(ctx: ToolExecuteCtx, slideId?: string): string {
   const stripped = stripWsExt(id)
   if (ctx.session.wsiRegistry.has(stripped)) return stripped
   if (ctx.session.wsiCache.has(stripped)) return stripped
-  // fix-D：agent 把 `histai/HISTAI-mixed/case_X` 塌缩成 basename `case_X`（无斜杠）——按 basename 在
+  // agent 把 `histai/HISTAI-mixed/case_X` 塌缩成 basename `case_X`（无斜杠）——按 basename 在
   //  注册表/缓存里找**完整键**返回（下游 wsiRegistry.get(id)/realWsi 依赖完整键；直接返回 basename 会让 cancer 丢失）。
   //  注意：必须对「无斜杠的 basename id」也跑（这才是塌缩形态），不能以 id.includes('/') 为门槛（那是完整 id 形态）。
   const base = baseId(id)
@@ -283,7 +276,7 @@ export function resolveWsiId(ctx: ToolExecuteCtx, slideId?: string): string {
   for (const key of ctx.session.wsiCache.keys()) {
     if (baseId(key) === base) return key
   }
-  // B2：把**合法备选**直接写进 message——throw 路径经 classifyToolError 归类为 SLIDE_NOT_FOUND，
+  // 把**合法备选**直接写进 message——throw 路径经 classifyToolError 归类为 SLIDE_NOT_FOUND，
   // 但分类器不知道本会话有哪些 slide；把列表塞进原文，模型才能自我纠正而不是瞎猜 id。
   const avail = [...new Set([...ctx.session.wsiRegistry.keys(), ...ctx.session.wsiCache.keys()])]
   const shown = avail.slice(0, 20)
@@ -308,7 +301,7 @@ export function realWsi(ctx: ToolExecuteCtx, slideId: string): { client: WsiClie
     entry = registry.get(stripped)
   }
   if (!entry) {
-    // fix-D：basename 兜底（agent 塌缩 id → 用 basename 匹配注册表完整键条目）
+    // basename 兜底（agent 塌缩 id → 用 basename 匹配注册表完整键条目）
     const base = baseId(slideId)
     for (const k of registry.keys()) {
       if (baseId(k) === base) { entry = registry.get(k); break }
@@ -328,8 +321,7 @@ export function fsSafe(id: string): string {
 
 /** 在 patchCache 里定位 patch：容忍两种表示。inspect_region 生成的 id 含 `/`（如
  *  `patch_histai/HISTAI-mixed/case_X_r0_0`），但模型常据 inspect 输出里的**展平文件路径**，把
- *  patch_ref 规范化成展平 basename（`patch_histai_HISTAI-mixed_...`）。旧实现 `p.id === patch_ref`
- *  **精确匹配失败**→抛「未知 patch_ref」→agent 误判 patch 未生成→重复 inspect+describe 直到预算耗尽。
+ *  patch_ref 规范化成展平 basename（`patch_histai_HISTAI-mixed_...`）。
  *  这里把 `/`、`\` 归一到 `_` 后比较，任一表示命中即返回；无命中返回 undefined（调用方自行兜底）。 */
 export function findPatchByRef(patchCache: Map<string, PatchRef[]>, patch_ref: string): PatchRef | undefined {
   const norm = (s: string) => s.replace(/[/\\]/g, '_')
@@ -370,7 +362,7 @@ export function findRegionByRef(roiCache: Map<string, Region[]> | undefined, reg
     if (anyR) return anyR
   }
   // 3) 纯 slide（无 _rN）：取该 slide 的组织富集度最高区（detect_roi 已按密度降序，[0] 即最密）。
-  //    fix-E：id 含目录前缀时（histai/HISTAI-mixed/case_X vs agent 传的 basename case_X）按 basename 匹配。
+  //    id 含目录前缀时（histai/HISTAI-mixed/case_X vs agent 传的 basename case_X）按 basename 匹配。
   const bySlide = all.find(
     (r) =>
       norm(r.slide_id) === refSlide ||
@@ -403,8 +395,8 @@ export function evidenceConfidence(session: PathAskSession): number {
   let sum = 0
   let weight = 0
   for (const n of obs) {
-    // ⚠️ 权重校准（2026-08-28 第二轮验证）：Patho-R1 VLM 良恶性不可靠（同一形态它在真癌上也报 "Benign lesion"），
-    // 若把 describe_patch 权重抬到 3，会放大 VLM 误判 → 真癌被叫良性（第二轮 15 例 overconfident_wrong 即此）。
+    // ⚠️ 权重校准：Patho-R1 VLM 良恶性不可靠（同一形态它在真癌上也报 "Benign lesion"），
+    // 若把 describe_patch 权重抬到 3，会放大 VLM 误判 → 真癌被叫良性。
     // 正确做法：describe_patch 与其他观察证据同权（1），让集体投票裁决；"反向时压置信保守"由 analyze_evidence
     // 的 morphAgainst 处理（形态与主诊断冲突 → 置信压 ≤0.5 + evidence_conflict，而非放大单一 VLM 信号）。
     const w = n.source.tool === 'run_mil' ? 2 : 1

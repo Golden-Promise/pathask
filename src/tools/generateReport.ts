@@ -24,7 +24,7 @@ function evidenceWalkthrough(graph: EvidenceGraph): string[] {
       rows.push(`  ⚠️ 未验证/模拟值 ${n.source.tool}（conf=0，${anchor || '无真实计算'}）：${n.claim.slice(0, 140)}${n.claim.length > 140 ? '…' : ''}`)
       continue
     }
-    // C2（2026-09-10）：VLM 不可用 → 确定性模板降级（真 WSI 会话下同时带 stub，上面已拦）。
+    // VLM 不可用 → 确定性模板降级（真 WSI 会话下同时带 stub，上面已拦）。
     // mock 会话里这条不含 stub，必须单独标出来——否则报告读者会把查表模板当成对这张图的观察。
     if (n.source.fallback) {
       rows.push(`  ⚠️ VLM 降级模板（非镜下观察，不参与投票）${n.source.tool}（conf=${n.confidence.toFixed(2)}${anchor ? `，${anchor}` : ''}）：${n.claim.slice(0, 140)}${n.claim.length > 140 ? '…' : ''}`)
@@ -81,7 +81,7 @@ export function formatClinical(report: Report): string {
   return lines.join('\n')
 }
 
-/** 15. 报告生成：由证据图 + 综合推断产出结构化报告（含证据链溯源 + 反事实），置信度不足时标注不确定性。 */
+/** 报告生成：由证据图 + 综合推断产出结构化报告（含证据链溯源 + 反事实），置信度不足时标注不确定性。 */
 export const generateReportSpec: ToolSpec<typeof GenerateReportSchema> = {
   name: 'generate_report',
   label: '生成病理报告',
@@ -94,9 +94,9 @@ export const generateReportSpec: ToolSpec<typeof GenerateReportSchema> = {
 
     const graph = ctx.session.evidenceStore.getGraph()
     let uncertainty: Report['uncertainty']
-    // ambiguous_morphology 置信门槛（2026-09-09）：只有当决策层"确信"形态模棱两可（conf≥门限）才归为
+    // ambiguous_morphology 置信门槛：只有当决策层"确信"形态模棱两可（conf≥门限）才归为
     // ambiguous_morphology（inspect_more）；若它自己也底气不足（[0.5,门限)），降级为更诚实的
-    // insufficient_evidence（request_human）。PATHASK_AMBIG_CONF 默认 0.6（较旧版隐含 0.5 略高，克制弃诊标签）。
+    // insufficient_evidence（request_human）。PATHASK_AMBIG_CONF 默认 0.6。
     const AMBIG_CONF = Number(process.env.PATHASK_AMBIG_CONF ?? 0.6)
     if (analysis.confidence < 0.5) {
       uncertainty = { type: 'insufficient_evidence', recommended_action: 'request_human' }
@@ -105,7 +105,7 @@ export const generateReportSpec: ToolSpec<typeof GenerateReportSchema> = {
         ? { type: 'ambiguous_morphology', recommended_action: 'inspect_more' }
         : { type: 'insufficient_evidence', recommended_action: 'request_human' }
     } else if ((analysis.againstCount ?? 0) > 0) {
-      // F3：存在反对主诊断的证据（良性描述/质疑性 VLM/能力语义反向）→ 证据矛盾，优先于 model_limitation
+      // 存在反对主诊断的证据（良性描述/质疑性 VLM/能力语义反向）→ 证据矛盾，优先于 model_limitation
       uncertainty = { type: 'evidence_conflict', recommended_action: 'verify_region' }
     } else if (analysis.diagnosis.includes('SCLC') || analysis.diagnosis.includes('癌')) {
       uncertainty = { type: 'model_limitation', recommended_action: 'request_human' }

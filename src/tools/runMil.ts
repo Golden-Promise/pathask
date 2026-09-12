@@ -11,7 +11,7 @@ const MOCK_PREDICTIONS: Record<string, { label: string; confidence: number }> = 
   'phyllodes-tumor': { label: 'benign', confidence: 0.66 },
 }
 
-/** 5. MIL 分类器：registry-gated，仅能力库匹配时可用（强证据路径核心）。
+/** MIL 分类器：registry-gated，仅能力库匹配时可用（强证据路径核心）。
  *  真实会话：在线抽 STREAM 规格特征（CONCH raw）→ RRTMIL 权重 → slide 级预测，网络失败抛错不回落 mock。 */
 export const runMilSpec: ToolSpec<typeof RunMilSchema> = {
   name: 'run_mil',
@@ -55,7 +55,7 @@ export const runMilSpec: ToolSpec<typeof RunMilSchema> = {
         `MIL(${cap.model_arch}) 预测 = ${pred.label}（conf=${pred.confidence} —— mock 预测，未验证，不参与投票）`,
         0,
         'run_mil',
-        // F8：capability id 不进 claim（连字符 id 会命中诊断规则 → 名称泄露成假证据），存 source 供能力语义判定
+        // capability id 不进 claim（连字符 id 会命中诊断规则 → 名称泄露成假证据），存 source 供能力语义判定
         { model: cap.model_arch, capability_id: cap.id, label: pred.label, stub: true },
       )
       return {
@@ -84,8 +84,8 @@ export const runMilSpec: ToolSpec<typeof RunMilSchema> = {
       `MIL(${cap.model_arch}) 预测 = ${pred.label}（conf=${pred.confidence.toFixed(3)}，${pred.num_patches} patch），attention 热点：${hotspots}`,
       pred.confidence,
       'run_mil',
-      // F8：capability id 不进 claim（连字符 id 会命中诊断规则 → 名称泄露成假证据），存 source 供能力语义判定
-      // F5：结构化 attention 热点进 source（报告期热点闭环用 level0 坐标对 top-1 热点补 describe）
+      // capability id 不进 claim（连字符 id 会命中诊断规则 → 名称泄露成假证据），存 source 供能力语义判定
+      // 结构化 attention 热点进 source（报告期热点闭环用 level0 坐标对 top-1 热点补 describe）
       { model: cap.model_arch, capability_id: cap.id, label: pred.label, attention_hotspots: pred.attention_hotspots },
     )
     return {

@@ -1,7 +1,7 @@
-/** 中止 / 超时信号的公共件（2026-09-11）。
+/** 中止 / 超时信号的公共件。
  *  收口动机：全仓反复出现 `ctx.signal ? AbortSignal.any([ctx.signal, AbortSignal.timeout(x)]) : AbortSignal.timeout(x)`
  *  这一模式（describePatch / analyzeEvidence / verifyRegion …）。**漏一处 = 留下一条能挂死的路径**，
- *  所以统一成「合成结果必定是 AbortSignal，永不为 undefined」。既有内联写法可逐步迁到这里。
+ *  所以统一成「合成结果必定是 AbortSignal，永不为 undefined」。
  *  ⚠️ Node 的 `AbortSignal.timeout` 内部计时器是 unref 的（不吊住事件循环），`AbortSignal.any` 亦然。 */
 
 /** 读 env 数值（仅认 >0 的有限数；缺失/非法 → fallback）。**调用时读**，探针可临时改 env 生效。 */

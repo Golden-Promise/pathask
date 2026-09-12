@@ -11,7 +11,7 @@ async function main() {
     streamFn: createScriptedStreamFn(FLOW_BREAST_STRONG),
     initialState: {
       model: MOCK_MODEL,
-      systemPrompt: buildSystemPrompt([]),  // run_mil 已下线：能力库（MIL）不再驱动诊断路径，Agent 统一走形态观察+检索路径
+      systemPrompt: buildSystemPrompt([]),
       tools: createTools(session),
     },
   })

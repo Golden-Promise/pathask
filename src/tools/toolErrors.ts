@@ -1,17 +1,12 @@
 /**
- * 工具错误分类 + 「可行动」错误文本（2026-09-10）。
+ * 工具错误分类 + 「可行动」错误文本。
  *
- * 【为什么有这个模块】修前全仓有两条**互不相通**的错误通道：
- *   ① throw —— pi-agent loop 的 `createErrorToolResult`(agent-loop.ts:760) 把 `err.message` 原样当 tool-result
- *      文本回给模型（`isError:true`，`details` 整个丢弃）；**框架零重试**。
- *   ② return `{text, details:{error:'字面量'}}` —— 文本进模型，但 `details.error` **没有任何消费者**
- *      （grep 全仓：0 处读取），且字面量大小写/词表在各工具间不一致（region_not_found / no_region / …）。
- * 两条路都只告诉模型「失败了」，不告诉「为什么、影响什么、怎么改」。本模块一处定义 code 空间，
- * 并产出固定结构的文本。**不做自动重试**（用户决策）：重试与否由模型读到「可否重试」后自行决定。
+ * pi-agent loop 的 `createErrorToolResult` 把 `err.message` 原样当 tool-result
+ * 文本回给模型（`isError:true`，`details` 整个丢弃）；**框架零重试**。
+ * 本模块一处定义 code 空间，并产出固定结构的文本。**不做自动重试**：重试与否由模型读到「可否重试」后自行决定。
  *
- * 【框架语义 · 勿接 afterToolCall】`agent-loop.ts:713-758` 的 finalizeExecutedToolCall 里，
- * `afterToolCall` 一旦 throw 会**丢掉真实 tool result**（:747-750）。所以 PathAsk 的错误处理**全部在本层完成**，
- * 不依赖任何 pi-agent 钩子；`probe_tool_errors.ts` 有一条断言守住这一点（防后人误接）。
+ * 【框架语义 · 勿接 afterToolCall】`afterToolCall` 一旦 throw 会**丢掉真实 tool result**。
+ * 所以 PathAsk 的错误处理**全部在本层完成**，不依赖任何 pi-agent 钩子（防后人误接）。
  */
 import type { ToolErrorCode, ToolErrorRecord, PathAskSession } from '../types'
 
@@ -30,23 +25,22 @@ export interface ClassifyContext {
   phase?: 'bridge' | 'vlm' | 'llm'
   /** makeTool 判定：**本工具的预算计时器**触发（区别于 agent abort，也区别于工具内部自己的超时） */
   timedOut?: boolean
-  /** makeTool 判定：agent/session 主动 abort（用户停止 / 步数上限 / per-case 墙钟截止）。
-   *  ⚠️ 步数上限**不再**由评测侧的 `MAX_TOOLS` 触发：B4 起由产品层
-   *  `PATHASK_MAX_TOOLS`（`resolveMaxTools()`）在 `beforeToolCall` 里**优雅收尾**（拦探索类工具 + terminate），
-   *  abort 只留给用户停止与 per-case 截止这两条真中断路径。 */
+  /** makeTool 判定：agent/session 主动 abort（用户停止 / per-case 墙钟截止）。
+   *  ⚠️ 步数上限**不**走 abort：由 `PATHASK_MAX_TOOLS`（`resolveMaxTools()`）在 `beforeToolCall`
+   *  里**优雅收尾**（拦探索类工具 + terminate），abort 只留给用户停止与 per-case 截止这两条真中断路径。 */
   aborted?: boolean
   budgetMs?: number
   elapsedMs?: number
   alternatives?: Alternatives
   /** 已保留的进度（k/n） */
   partial?: { done: number; total?: number }
-  /** 瞬时故障预算状态（Step 2）——只对瞬时类 code 有值，见 `consumeTransientBudget` */
+  /** 瞬时故障预算状态——只对瞬时类 code 有值，见 `consumeTransientBudget` */
   transient?: TransientBudgetState
   /** 瞬时故障预算的**消费点**：分类器算出 code 后回调，由它决定要不要扣令牌。
    *  做成回调而不是先分类再重建文本，是因为「扣令牌」和「渲染文本」必须看到同一个 code——
    *  两趟分类会让两条真相有机会分叉（而本模块的全部价值就是只有一条真相）。 */
   transientFor?: (code: ToolErrorCode) => TransientBudgetState | undefined
-  /** 语义重复状态的**读取点**（B6）：分类器算出 code 后回调。与 `transientFor` 同样做成回调——
+  /** 语义重复状态的**读取点**：分类器算出 code 后回调。与 `transientFor` 同样做成回调——
    *  「取状态」与「渲染文本」必须看到同一个 code。**只由 `makeTool` 的抓取路径传**：
    *  熔断器（`resilience.ts`）也调 `classifyToolError`，它不该（也不能）往病例账本里数次数。 */
   semanticRepeatFor?: (code: ToolErrorCode) => SemanticRepeatState | undefined
@@ -333,7 +327,7 @@ function codeFromMessage(msg: string): ToolErrorCode | undefined {
   if (/病例不存在|未知 case_id|未找到 .*的临床记录/i.test(msg)) return 'CASE_NOT_FOUND'
   if (/WSI 桥接不可用|bridge 不可用|run_mil 无法执行/.test(msg)) return 'BRIDGE_UNAVAILABLE'
   // 熔断拒绝（util/resilience.ts）——措辞是**契约**：必须命中这里，且不得含「超时」二字
-  // （`isTimeoutish` 在本函数**之前**判定，含「超时」会被误分类成 *_TIMEOUT，探针有断言守）。
+  // （`isTimeoutish` 在本函数**之前**判定，含「超时」会被误分类成 *_TIMEOUT）。
   if (/vLLM 不可用|Patho-R1 不可用/.test(msg)) return 'VLM_UNREACHABLE'
   if (/决策 LLM 不可用/.test(msg)) return 'LLM_UNREACHABLE'
   if (/WSI 桥接 (POST )?\d{3}/.test(msg)) return 'BRIDGE_HTTP'
@@ -364,7 +358,7 @@ export function buildToolErrorText(
   lines.push(`  为什么：${whyBits.join(' ')}`)
   lines.push(`  影响：${c.impact}`)
   lines.push(`  怎么改：${c.fix}`)
-  // B6：语义重复达阈值 → **替换**「可否重试」这一行（不是追加）。它是覆盖而非补充：同一 id 已失败 N 次时
+  // 语义重复达阈值 → **替换**「可否重试」这一行（不是追加）。它是覆盖而非补充：同一 id 已失败 N 次时
   // 「可以按上面的怎么改调整后再试」读起来就是「重放一次也行」，而那正是要劝退的动作。
   // 措辞刻意点 `id` 而不是 `参数`：自愈路径恰恰是**换 id**，这里劝退的是「原样重放同一个 id」。
   const rep = opts.semanticRepeat
@@ -383,7 +377,7 @@ export function buildToolErrorText(
     const n = opts.partial.total ? `/${opts.partial.total}` : ''
     lines.push(`  已完成：${opts.partial.done}${n}（这些观测已保留在证据库，标记 partial，可继续用于推理）`)
   }
-  // Step 2（2026-09-11）：瞬时故障预算。**写在上一条「可否重试」之后**——它是覆盖，不是补充：
+  // 瞬时故障预算。**写在上一条「可否重试」之后**——它是覆盖，不是补充：
   // 耗尽时上面那句「可以按…调整后再试」必须被这句推翻，否则模型会读到互相矛盾的两句话。
   if (opts.transient) {
     const { remaining, limit, exhausted } = opts.transient
@@ -451,9 +445,7 @@ export function classifyToolError(err: unknown, ctx: ClassifyContext = {}): Tool
       // 带原文的情形有两类：
       //  ① UNKNOWN——不给原文等于什么都没说，另附栈首帧；
       //  ② **id 引用类**——它们的 `fix` 写着「从下面列出的 X 里挑」，而**可用列表就在原始 message 里**
-      //     （`未知 patch_ref: p1。可用 patch_ref: …`）。此前只渲染 UNKNOWN 的原文 → 裸 throw 路径下
-      //     模型被指去看一个**不存在的列表**，「照着备选改 id」这条唯一自愈通道就被掐断了
-      //     （probe_retry_budget.ts ③ 抓到的就是这个）。
+      //     （`未知 patch_ref: p1。可用 patch_ref: …`）。
       raw: rawFor(code) ? [message, code === 'UNKNOWN' ? errFrame(err) : ''].filter(Boolean).join(' | ') : undefined,
       budgetMs: ctx.budgetMs,
       elapsedMs: ctx.elapsedMs,
@@ -465,7 +457,7 @@ export function classifyToolError(err: unknown, ctx: ClassifyContext = {}): Tool
   }
 }
 
-// ---------- 瞬时故障重试预算（Step 2，2026-09-11） ----------
+// ---------- 瞬时故障重试预算 ----------
 
 /**
  * 哪些失败算「瞬时故障」——**与「语义错误」的分界就是本模块最重要的一刀**：
@@ -474,11 +466,9 @@ export function classifyToolError(err: unknown, ctx: ClassifyContext = {}): Tool
  *    给它们一个病例级令牌桶（默认 3），耗尽后错误文本转终态、劝模型换策略。
  *  - **语义类**（PATCH_NOT_FOUND / REGION_NOT_FOUND / SLIDE_NOT_FOUND / CASE_NOT_FOUND…）：模型拿错了 id。
  *    这类**刻意不给上界**——结构化错误里已经附了「可用备选」列表，照着改 id 重试是**唯一的自愈路径**
- *    （实测端到端里 PATCH_NOT_FOUND 有真恢复）。给它设令牌 = 把我们自己唯一的纠错通道掐掉。
- *    它另有的天然上界是产品层的 `PATHASK_MAX_TOOLS`（`src/loop/governance.ts: resolveMaxTools()`，
- *    默认 15，B4 起在 `beforeToolCall` 里拦非收尾类工具并 terminate）+ 单例墙钟截止，足够。
- *    ⚠️ 这里一度写的是 `MAX_TOOLS=15`——那是**评测侧**的常量（`eval_core.ts`/`agent_mock.ts`），
- *    生产路径上根本不存在（B4 **之前** `grep -rn MAX_TOOLS src/` 零命中），论证挂的是个空引用。B4 之后两侧同源。
+ *    给它设令牌 = 把我们自己唯一的纠错通道掐掉。
+ *    它另有的天然上界是产品层的 `PATHASK_MAX_TOOLS`（`resolveMaxTools()`，
+ *    默认 15，在 `beforeToolCall` 里拦非收尾类工具并 terminate）+ 单例墙钟截止，足够。
  *  - **抖动类**（VLM_EMPTY / LLM_EMPTY / LLM_BAD_JSON）：单次廉价且常自愈 → 不消耗预算。
  *    理由：扣令牌会让「一次采样抖动」和「服务挂死」受到同样惩罚，而前者重试成本极低。
  *  - **TOOL_TIMEOUT 算瞬时**：工具预算耗尽说明这个病例正在恶化，正是该收紧的时候。
@@ -511,7 +501,7 @@ export function resolveRetryBudget(): number {
 }
 
 /** 消费一个瞬时令牌并返回状态；**非瞬时 code 返回 undefined 且不消费**。
- *  预算挂 `session.retryBudget`（惰性初始化，老会话对象/探针手工构造的也能用）。 */
+ *  预算挂 `session.retryBudget`（惰性初始化）。 */
 export function consumeTransientBudget(session: PathAskSession, code: ToolErrorCode): TransientBudgetState | undefined {
   if (!isTransientCode(code)) return undefined
   const limit = resolveRetryBudget()
@@ -525,7 +515,7 @@ export function consumeTransientBudget(session: PathAskSession, code: ToolErrorC
   return { remaining: b.remaining, limit, exhausted: b.remaining === 0 }
 }
 
-// ---------- 语义重复提示（B6，2026-09-11；**默认关**） ----------
+// ---------- 语义重复提示（**默认关**） ----------
 
 export interface SemanticRepeatState {
   /** 含本次在内的第几次同 `(tool, code)` 失败。 */
@@ -568,7 +558,7 @@ export function semanticRepeatState(
 
 /** 追加一条失败账本（makeTool 的 catch 与 softError 共用）。账本是 session 级的，不依赖框架钩子。 */
 export function recordToolError(session: PathAskSession, rec: ToolErrorRecord): void {
-  if (!session.toolErrors) session.toolErrors = [] // 老会话对象（探针手工构造）兜底
+  if (!session.toolErrors) session.toolErrors = [] // 老会话对象兜底
   session.toolErrors.push(rec)
   session.metrics?.toolFail?.(rec.toolCallId, rec.tool, rec.code)
 }
@@ -589,7 +579,7 @@ export function markPartialEvidence(session: PathAskSession, toolCallId: string)
 // ---------- return 路径（miss，不 throw）----------
 
 /** miss 路径的**返回式**软错误：保留「模型看到文本、非 isError」的既有语义（不改变这些分支的行为），
- *  只把文本升级成结构化 + 记一条账本。现有 5 处 `details:{error:'字面量'}` 迁到此处。 */
+ *  只把文本升级成结构化 + 记一条账本。 */
 export function softError(
   ctx: { session: PathAskSession; toolCallId: string },
   tool: string,
@@ -610,7 +600,7 @@ export function softError(
   }
 }
 
-/** 工具预算（ms）：spec 显式 > 全局 env > 默认。默认取实测 max 的 ~1.5×（抓死锁，不压性能）。 */
+/** 工具预算（ms）：spec 显式 > 全局 env > 默认。 */
 export const DEFAULT_TOOL_TIMEOUT_MS = 300_000
 export function resolveToolBudgetMs(meta: { timeoutMs?: number } | undefined): number {
   const env = Number(process.env.PATHASK_TOOL_TIMEOUT_MS)

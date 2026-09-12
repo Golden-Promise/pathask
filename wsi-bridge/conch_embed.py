@@ -2,7 +2,7 @@
 
 CONCH（Mahmood Lab，CC-BY-NC-ND，仅学术非商用）双塔 ViT-B-16，512 维 L2 归一化。
 组织学专用 CLIP：相比 PLIP，对病理组织/细胞形态语义更贴合（detect_roi 检索首选）。
-权重在 CONCH_WEIGHTS（环境变量指定，已验证可加载）。
+权重在 CONCH_WEIGHTS（环境变量指定）。
 """
 import base64
 import io
@@ -50,7 +50,7 @@ def embed_images(sources: list[str]) -> list[list[float]]:
 
     model, pre, _, _ = get_conch()
     images = [_load_image(s) for s in sources]
-    xs = torch.stack([pre(img) for img in images])  # (n, 3, 448, 448)——CONCH vision_cfg.image_size=448，注释此前误写 224
+    xs = torch.stack([pre(img) for img in images])  # (n, 3, 448, 448)——CONCH vision_cfg.image_size=448
     with torch.no_grad():
         feats = model.encode_image(xs)
     feats = feats / feats.norm(dim=-1, keepdim=True)
@@ -58,8 +58,7 @@ def embed_images(sources: list[str]) -> list[list[float]]:
 
 
 def get_conch224():
-    """CONCH-224（CLAM 生态标准输入规格）。同片对齐实测：STREAM h5 特征 = CONCH-224 输入
-    （cos 0.964），PathAsk 默认 448 输入 cos 仅 0.923 → run_mil 在线抽特征必须用 224。"""
+    """CONCH-224（CLAM 生态标准输入规格）。"""
     global _model224, _preprocess224
     if _model224 is None:
         from conch.open_clip_custom import create_model_from_pretrained
@@ -74,8 +73,8 @@ def embed_images_raw(sources: list[str]) -> list[list[float]]:
 
     STREAM h5 特征（(N,512) float32，行范数≈√512≈22.65、全局 mean≈0/std≈1）实测来自
     CONCH-224 的 ln_contrast 池化特征：encode_image(normalize=False, proj_contrast=False)
-    （attn_pool + LayerNorm，无 proj_contrast 投影、不 L2 归一化），force_image_size=224
-    （同片逐 patch 余弦 0.964 vs 448 的 0.923）。任何其他组合分布对不上，STREAM 权重会失效。
+    （attn_pool + LayerNorm，无 proj_contrast 投影、不 L2 归一化），force_image_size=224。
+    任何其他组合分布对不上，STREAM 权重会失效。
     喂给 STREAM MIL 前不得再归一化。
     """
     import torch

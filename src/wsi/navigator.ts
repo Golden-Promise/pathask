@@ -4,7 +4,7 @@ import { baselineRegionsFromCells } from './sampling'
 
 /** 导航器：把「往哪看」从 agent 的 ad-hoc 工具调用抽成一层可替换的采样策略。
  *
- *  职责分层（与 loop 收紧讨论一致）：
+ *  职责分层：
  *   - **基线 baseline**：与问题无关的密度地板（tissue_fraction top-k），**每 slide 一次、缓存进 roiCache**（多问题复用，摊薄成本）。
  *   - **增量 increment**：与问题相关，**每问题追加**，union 进 ROI 池（不覆盖基线）。→ 替换为「器官+问题」条件导航器。
  *
@@ -13,8 +13,8 @@ import { baselineRegionsFromCells } from './sampling'
  *  用 question 生成问题查询；训练导航器则把 organ+question 当输入 prompt 特征。
  *
  *  ⚠️ 诚实边界：`incrementRegions` 当前是**薄兜底**（密度 gap 补区，弱问题感知），非真实语义相关性——
- *    真正的「与问题最相关区域」要等 **导航器训练**（[[pathask-navigator-baseline-decision]] 已证单癌种标注集
- *    被弃，须端到端/自监督）。本接口的目的是让多轮结构立起来（基线复用 + 增量累积），训练后只换一个函数。
+ *    真正的「与问题最相关区域」要等 **导航器训练**。本接口的目的是让多轮结构立起来
+ *    （基线复用 + 增量累积），训练后只换一个函数。
  */
 export interface NavOpts {
   /** 基线候选区数（默认 PATHASK_ROI_BASELINE_K 或 5）。 */
@@ -76,7 +76,7 @@ export async function ensureBaseline(session: PathAskSession, slideId: string, o
 
 /** 每问题增量：在基线上追加区域，union 进池。
  *  ⚠️ **当前是兜底（coverage-fill，弱问题感知）**——把池从 baseK 扩到 coverage 目标、且不与已选区重叠，
- *    不依赖模型/CONCH，可离线测。它**不是**「与问题最相关」；真实相关性要等 [[导航器训练]]（本函数接口不变）。
+ *    不依赖模型/CONCH，可离线测。它**不是**「与问题最相关」；真实相关性要等 导航器训练（本函数接口不变）。
  *    返回本次新增（非全池）；无真实 WSI / 已到 coverage / 失败 → []。 */
 export async function incrementRegions(session: PathAskSession, slideId: string, question: string, opts: NavOpts = {}): Promise<Region[]> {
   // 「问题/器官相关」层的输入：organ=器官先验（organ-level，非诊断），question=问题文本。

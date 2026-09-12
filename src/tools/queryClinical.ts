@@ -9,7 +9,7 @@ function formatRow(row: Record<string, string>): string {
     .join(', ')
 }
 
-/** 9. 临床数据查询：按病例号读临床表（Phase 3 接真实 CSV/TSV）。 */
+/** 临床数据查询：按病例号读临床表。 */
 export const queryClinicalSpec: ToolSpec<typeof QueryClinicalSchema> = {
   name: 'query_clinical',
   label: '临床数据查询',
@@ -19,7 +19,7 @@ export const queryClinicalSpec: ToolSpec<typeof QueryClinicalSchema> = {
   execute: async (params, ctx) => {
     const row = ctx.session.clinicalData[params.case_id]
     if (!row) {
-      // B2：把可查的 case_id 列出来（模型常把 slide_id/basename 当 case_id 传）
+      // 把可查的 case_id 列出来（模型常把 slide_id/basename 当 case_id 传）
       return softError(ctx, 'query_clinical', 'CASE_NOT_FOUND', {
         detail: `未找到 ${params.case_id} 的临床记录。`,
         alternatives: { label: 'case_id', values: Object.keys(ctx.session.clinicalData) },

@@ -14,7 +14,7 @@ const MAX_PATCHES = Number(process.env.PATHASK_PERCEIVE_MAX_PATCHES ?? 24)
 /** 区域感知：把「切块 + 形态描述」编排成一次 agent 调用（免去手动 inspect_region 再批量 describe_patch 的两次往返）。
  *
  *  ⚠️ 只做感知，不含 verify —— verify 是「带具体假设的高倍定向复核」，需要 verification_question + 推理判断，
- *  由 agent 单独（条件触发）调用 verify_region，不与 describe 焊死（design：verify 触发在决策层，见 loop 讨论）。
+ *  由 agent 单独（条件触发）调用 verify_region，不与 describe 焊死。
  *
  *  用法（二选一）：
  *   - `perceive(question)`：无 region_ref → 感知**当前 ROI 池全部区域**（一次全片形态读，最省往返）。

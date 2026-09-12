@@ -2,7 +2,7 @@ import { Type } from 'typebox'
 import type { Static } from '@earendil-works/pi-ai'
 import { addEvidence, evidenceConfidence, isVoteEvidence, type ToolSpec } from './common'
 
-/** 14. 反事实分析：证据图 leave-one-out，量化移除某证据对置信度的影响。 */
+/** 反事实分析：证据图 leave-one-out，量化移除某证据对置信度的影响。 */
 export const counterfactualSpec: ToolSpec<typeof CounterfactualSchema> = {
   name: 'counterfactual',
   label: '反事实分析',

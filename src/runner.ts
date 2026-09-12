@@ -27,7 +27,7 @@ export function lastAssistantText(messages: AgentMessage[]): string {
   return ''
 }
 
-/** F4：证据图里的反事实（leave-one-out）是否「新鲜」——存在且不早于最后一次 analyze_evidence 推断。
+/** 证据图里的反事实（leave-one-out）是否「新鲜」——存在且不早于最后一次 analyze_evidence 推断。
  *  反事实跑在 analyze 之前（陈旧，不含最终证据集）→ 报告期应重跑。 */
 function hasFreshCounterfactual(session: PathAskSession): boolean {
   const nodes = session.evidenceStore.allNodes()
@@ -41,19 +41,19 @@ function hasFreshCounterfactual(session: PathAskSession): boolean {
   return lastCfTs >= lastAnalysisTs
 }
 
-/** F4 幂等：重跑反事实前把旧 counterfactual 节点移出图（多次重跑不越积越多；新增节点是独立 inference）。 */
+/** 幂等：重跑反事实前把旧 counterfactual 节点移出图（多次重跑不越积越多；新增节点是独立 inference）。 */
 function clearCounterfactuals(session: PathAskSession): void {
   for (const n of session.evidenceStore.allNodes()) {
     if (n.source.tool === 'counterfactual') session.evidenceStore.removeNode(n.id)
   }
 }
 
-/** B5：最后一次 `analyze_evidence` 是否**不早于**最后一条可投票证据（分析新鲜度）。
- *  与 `hasFreshCounterfactual`（F4）对称，补的是同一类缺口的另一半：模型第 4 步 analyze、
+/** 最后一次 `analyze_evidence` 是否**不早于**最后一条可投票证据（分析新鲜度）。
+ *  与 `hasFreshCounterfactual` 对称，补的是同一类缺口的另一半：模型第 4 步 analyze、
  *  第 6 步又 perceive 出新观察时，`ensureStructuredReport` 用的仍是**旧** `currentAnalysis`——
  *  新观察既进不了投票，也进不了证据图里的裁决。反事实早就有这条检查，分析一直没有。
  *  基准取 `isVoteEvidence` 而非「全部节点」：只有会进投票的观察才谈得上让分析过时。
- *  否则一条 `query_knowledge` 背景参考也能触发重跑，而它对票数毫无影响——重跑是贵的（单次 ~269s）。 */
+ *  否则一条 `query_knowledge` 背景参考也能触发重跑，而它对票数毫无影响——重跑是贵的。 */
 export function hasFreshAnalysis(session: PathAskSession): boolean {
   const nodes = session.evidenceStore.allNodes()
   const lastAnalysisTs = Math.max(
@@ -65,12 +65,12 @@ export function hasFreshAnalysis(session: PathAskSession): boolean {
   return lastAnalysisTs >= lastVoteTs
 }
 
-/** B5：重跑 analyze_evidence 前清掉上一轮的分析节点。按 `source.tool` 清，**不是**按 `type==='inference'`
- *  ——`analyzeEvidence` 每次调用落**两个**节点（inference 与 conclusion，`analyzeEvidence.ts:1022-1035`），
+/** 重跑 analyze_evidence 前清掉上一轮的分析节点。按 `source.tool` 清，**不是**按 `type==='inference'`
+ *  ——`analyzeEvidence` 每次调用落**两个**节点（inference 与 conclusion），
  *  只清 inference 会留下一份再没人关联的旧 conclusion：证据图里出现两个结论，而报告期走读会两个都列。
  *  `removeNode` 连两个方向的关联边一起删（与 `clearCounterfactuals` 同一套），故不留悬空边。
  *  **重跑失败（throw）时调用方直接 `return null`（真 abstain）**，此时已清掉的节点不会污染任何已落盘的东西：
- *  `generateReport` 用 `evidenceStore.getGraph()` 取的是**新数组快照**（`EvidenceStore.ts:42`），
+ *  `generateReport` 用 `evidenceStore.getGraph()` 取的是**新数组快照**，
  *  `currentReport` 里那份图不随 store 变化。 */
 export function clearAnalysisNodes(session: PathAskSession): void {
   for (const n of session.evidenceStore.allNodes()) {
@@ -78,9 +78,8 @@ export function clearAnalysisNodes(session: PathAskSession): void {
   }
 }
 
-/** B5：分析新鲜度重跑开关（**默认关**）。默认关不是保守，是这一项**风险最高**：重跑会改报告置信度
- *  与证据图（乃至翻转主诊断），而它补的是一条当前 101 例里尚未暴露的路径。按治理清单的约定，
- *  干预类一律 env 门控、A/B 之后才谈默认值。与其他开关共用同一套读取约定：只认显式的开启值。 */
+/** 分析新鲜度重跑开关（**默认关**）。默认关不是保守，是这一项**风险最高**：重跑会改报告置信度
+ *  与证据图（乃至翻转主诊断）。与其他开关共用同一套读取约定：只认显式的开启值。 */
 export function freshAnalysisEnabled(): boolean {
   const raw = process.env.PATHASK_FRESH_ANALYSIS
   if (raw === undefined || raw.trim() === '') return false
@@ -90,7 +89,7 @@ export function freshAnalysisEnabled(): boolean {
 type MilHotspot = MilPrediction['attention_hotspots'][number]
 type MilHotspotNode = EvidenceNode & { source: EvidenceSource & { attention_hotspots: MilHotspot[] } }
 
-/** F5 热点闭环候选：证据图中带 attention 热点的最高置信 run_mil 节点 + 构造的热点描述区域。 */
+/** 热点闭环候选：证据图中带 attention 热点的最高置信 run_mil 节点 + 构造的热点描述区域。 */
 export interface HotspotCandidate {
   nodeId: string
   region: Region
@@ -103,7 +102,7 @@ export interface HotspotCandidate {
  *  留在这里会让 runner 与工具层成环）；此处**转出**以保持既有 import 路径与探针不变。 */
 export { overlapRatio } from './util/geom'
 
-/** F5 纯逻辑：选最高置信 run_mil 节点，把 top-1 热点（level0 左上角）扩成 512 基底像素的描述区域，
+/** 纯逻辑：选最高置信 run_mil 节点，把 top-1 热点（level0 左上角）扩成 512 基底像素的描述区域，
  *  倍率=原生 objective（level0 真读，最贴近 MIL 输入）。无结构化热点的节点（如 mock 路径）返回 null。 */
 export function selectHotspotRegion(nodes: EvidenceNode[], slideId: string, objectivePower: number): HotspotCandidate | null {
   const milNodes = nodes.filter(
@@ -132,7 +131,7 @@ export function selectHotspotRegion(nodes: EvidenceNode[], slideId: string, obje
   }
 }
 
-/** F5 幂等：已有 describe_patch / verify_region 观察覆盖该热点区域（bbox 重叠 ≥ 50%）则视为已描述。 */
+/** 幂等：已有 describe_patch / verify_region 观察覆盖该热点区域（bbox 重叠 ≥ 50%）则视为已描述。 */
 export function hotspotCovered(nodes: EvidenceNode[], region: Region): boolean {
   return nodes.some((n) => {
     if (n.type !== 'observation') return false
@@ -142,7 +141,7 @@ export function hotspotCovered(nodes: EvidenceNode[], region: Region): boolean {
   })
 }
 
-/** F5：MIL 热点闭环确定性层。若 run_mil 带 attention 热点、热点区域尚未被 VLM 描述，则程序化
+/** MIL 热点闭环确定性层。若 run_mil 带 attention 热点、热点区域尚未被 VLM 描述，则程序化
  *  inspect_region + describe_patch（询问带 MIL 预测，让 VLM 可反驳锚点），把「模型为什么这么判」补进证据链。
  *  幂等（hotspotCovered 命中即跳过）；仅真实会话（mock 无结构化热点坐标）。返回是否新增热点描述证据。 */
 async function ensureHotspotClosed(session: PathAskSession): Promise<boolean> {
@@ -165,10 +164,10 @@ async function ensureHotspotClosed(session: PathAskSession): Promise<boolean> {
       patch_ref: patches[0].id,
       question: `这是 MIL 分类器（${cand.capabilityId ?? '能力库'}）的 attention 热点区域——模型预测该全片为「${cand.label ?? '未知'}」（conf=${cand.confidence.toFixed(2)}）时最关键的 patch。请客观描述此 patch 的形态学特征（细胞核大小/异型性/排列/间质等），并判断镜下形态与这一预测是否一致，还是支持其他诊断。`,
     })
-    console.warn(`[runner] F5 热点闭环：对 top-1 热点 ${cand.region.id}@(${cand.region.x},${cand.region.y}) 补 describe_patch 证据（conf=${cand.confidence.toFixed(2)}）`)
+    console.warn(`[runner] 热点闭环：对 top-1 热点 ${cand.region.id}@(${cand.region.x},${cand.region.y}) 补 describe_patch 证据（conf=${cand.confidence.toFixed(2)}）`)
     return true
   } catch (e) {
-    console.error(`[runner] F5 热点描述失败（不阻塞报告）: ${e instanceof Error ? e.message : String(e)}`)
+    console.error(`[runner] 热点描述失败（不阻塞报告）: ${e instanceof Error ? e.message : String(e)}`)
     return false
   }
 }
@@ -183,7 +182,7 @@ async function ensureHotspotClosed(session: PathAskSession): Promise<boolean> {
  *  返回补跑生成的报告文本；无需兜底（LLM 已完整收尾）或失败返回 null。
  *  设计分工：创造性探索（看哪、看什么、信多少）是 LLM 的；报告契约是系统的、确定性的。
  *  ⚠️ 契约判定的唯一标准是证据库内容，不是 LLM 的"信心声明"——LLM 说证据不足 ≠ 系统判定不足。 */
-/** Issue 4：evidence_conflict 未解决 → 系统层**强制** verify_region（而非仅给 LLM 建议）。
+/** evidence_conflict 未解决 → 系统层**强制** verify_region（而非仅给 LLM 建议）。
  *  找一个 against 观察（优先 describe_patch）的坐标去高倍复核；复核成功则新证据进投票重跑 analyze+report。
  *  无复核坐标或 VLM 不可用 → 置信压到 0.3 并标"证据矛盾未解决，建议人工复核"。 */
 async function forceResolveConflict(session: PathAskSession): Promise<{ text: string } | null> {
@@ -215,7 +214,7 @@ async function forceResolveConflict(session: PathAskSession): Promise<{ text: st
 }
 
 /** 兜底阶段 0.5（describe 下限）：LLM 若 0（或 < PATHASK_MIN_DESCRIBE 条）真实 describe 就收尾——
- *  采错区/跳过形态证据（09523/20091 弃诊根因）时，系统用 detect_roi 的 top ROI 确定性补 describe，
+ *  采错区/跳过形态证据时，系统用 detect_roi 的 top ROI 确定性补 describe，
  *  保证"弃诊前至少看过镜下形态"。幂等：该区域已被 describe/verify 覆盖则跳过。返回是否新增证据。 */
 async function ensureDescribeFloor(session: PathAskSession): Promise<boolean> {
   const minDescribe = Number(process.env.PATHASK_MIN_DESCRIBE ?? 1)
@@ -249,7 +248,7 @@ async function ensureDescribeFloor(session: PathAskSession): Promise<boolean> {
 }
 
 export async function ensureStructuredReport(session: PathAskSession): Promise<string | null> {
-  // 阶段 0（F5）：MIL 热点闭环——run_mil 带 attention 热点且热点区域未被描述过 → 程序化补一条
+  // 阶段 0：MIL 热点闭环——run_mil 带 attention 热点且热点区域未被描述过 → 程序化补一条
   // 热点 describe_patch 观察证据（进投票）。新证据出现且已有 analyze → 重跑投票（热点观察参与裁决）。
   // 增强项：失败不阻塞报告。mock 会话自动跳过（无结构化热点坐标）。
   let rerunAnalysis = false
@@ -257,7 +256,7 @@ export async function ensureStructuredReport(session: PathAskSession): Promise<s
     const added = await ensureHotspotClosed(session)
     if (added && session.currentAnalysis) rerunAnalysis = true
   } catch (e) {
-    console.error(`[runner] F5 热点闭环失败（不阻塞报告）: ${e instanceof Error ? e.message : String(e)}`)
+    console.error(`[runner] 热点闭环失败（不阻塞报告）: ${e instanceof Error ? e.message : String(e)}`)
   }
   // 阶段 0.5：describe 下限——0 条真实形态描述就收尾 → 程序化补，避免"弃诊前没看过镜下形态"
   try {
@@ -267,10 +266,9 @@ export async function ensureStructuredReport(session: PathAskSession): Promise<s
     console.error(`[runner] describe 下限兜底失败（不阻塞报告）: ${e instanceof Error ? e.message : String(e)}`)
   }
 
-  // 阶段 1：analyze_evidence 缺失（LLM analyze 前放弃）、F5 新增热点证据、或 B5 分析陈旧
+  // 阶段 1：analyze_evidence 缺失（LLM analyze 前放弃）、新增热点证据、或分析陈旧
   // → 程序化（重）跑投票。
-  // §二 Abstain 误报根治：之前 `if (!currentAnalysis) return null` 让 LLM 一句"证据不足"就断掉证据链。
-  // B5：陈旧这一条要**先清旧节点再重跑**（`analyzeEvidence` 是追加而非覆盖），否则每重跑一次
+  // 陈旧这一条要**先清旧节点再重跑**（`analyzeEvidence` 是追加而非覆盖），否则每重跑一次
   // 图上就多一份 inference+conclusion。清空后重跑产出的那份就是图里唯一的分析。
   const staleAnalysis = freshAnalysisEnabled() && !hasFreshAnalysis(session)
   if (staleAnalysis) clearAnalysisNodes(session)
@@ -279,8 +277,8 @@ export async function ensureStructuredReport(session: PathAskSession): Promise<s
     if (obs.length === 0) return null // 真无证据（连 scan_overview 都没跑）→ 无法投票，真 abstain
     try {
       await runSystemTool(analyzeEvidenceSpec, session, 'sys-analyze-evidence', {})
-      if (staleAnalysis) console.warn(`[runner] B5 分析陈旧（analyze 之后又采到可投票的新证据）→ 清旧节点并重跑 analyze_evidence`)
-      else if (rerunAnalysis) console.warn(`[runner] F5 热点证据新增 → 重跑 analyze_evidence（热点观察进投票）`)
+      if (staleAnalysis) console.warn(`[runner] 分析陈旧（analyze 之后又采到可投票的新证据）→ 清旧节点并重跑 analyze_evidence`)
+      else if (rerunAnalysis) console.warn(`[runner] 热点证据新增 → 重跑 analyze_evidence（热点观察进投票）`)
       else console.warn(`[runner] LLM 未调 analyze_evidence 即收尾，系统程序化补跑投票（基于 ${obs.length} 条证据）`)
     } catch (e) {
       console.error(`[runner] analyze_evidence 兜底失败（真 abstain）: ${e instanceof Error ? e.message : String(e)}`)
@@ -288,7 +286,7 @@ export async function ensureStructuredReport(session: PathAskSession): Promise<s
     }
   }
   let rerunReport = false
-  // F4：反事实必须「新鲜」——LLM 可能先跑反事实再跑 analyze（陈旧，不含最终证据集），
+  // 反事实必须「新鲜」——LLM 可能先跑反事实再跑 analyze（陈旧，不含最终证据集），
   // 此时重跑（默认挑最高置信可投票证据，如 run_mil）；多次重跑前先清旧节点（幂等）。
   if (!hasFreshCounterfactual(session)) {
     try {
@@ -300,7 +298,7 @@ export async function ensureStructuredReport(session: PathAskSession): Promise<s
       console.error(`[runner] counterfactual 兜底失败（不阻塞报告）: ${e instanceof Error ? e.message : String(e)}`)
     }
   }
-  // Issue 4：LLM 已出报告但带未解决证据矛盾 → 仍强制走验证，不直接返回
+  // LLM 已出报告但带未解决证据矛盾 → 仍强制走验证，不直接返回
   if (session.currentReport && !rerunReport && session.currentReport.uncertainty?.type !== 'evidence_conflict') return null
   let res
   try {
@@ -309,7 +307,7 @@ export async function ensureStructuredReport(session: PathAskSession): Promise<s
     console.error(`[runner] generate_report 兜底失败: ${e instanceof Error ? e.message : String(e)}`)
     return null
   }
-  // 阶段 2（Issue 4）：evidence_conflict → 系统层强制 verify_region（而非仅建议）；失败降置信+人工复核
+  // 阶段 2：evidence_conflict → 系统层强制 verify_region（而非仅建议）；失败降置信+人工复核
   const resolved = await forceResolveConflict(session)
   return resolved ? resolved.text : res.text
 }
@@ -338,9 +336,7 @@ export async function persistReport(
       cancer,
       question: opts.question ?? null,
       generated_at: now.toISOString(),
-      metrics: session.metrics.summary(), // Phase 6.3：单次阅片成本随报告落盘
-      // B0（2026-09-11）循环治理汇总占位。`data/reports/*.json` 是既有的分析通道（此前工具失败/端点耗时
-      // 都靠 metrics 从这里读出来），治理数据走同一条路，别只在评测行里有。台账 B1 落地前恒为 null。
+      metrics: session.metrics.summary(), // 单次阅片成本随报告落盘
       loop_guard: loopGuardSummary(session),
     },
     report,
@@ -359,13 +355,13 @@ export async function runQuestion(
   session?: PathAskSession,
   opts: { persist?: boolean; outDir?: string } = {},
 ): Promise<string> {
-  // Phase 6.3 指标：工具执行计时（toolCallId 配对，防并发串线）+ LLM 每轮 token usage
+  // 指标：工具执行计时（toolCallId 配对，防并发串线）+ LLM 每轮 token usage
   if (session) {
-    // B4：开新问题前清循环台账。**不清就是真 bug**：同一 session 问第二个问题时，
+    // 开新问题前清循环台账。**不清就是真 bug**：同一 session 问第二个问题时，
     // 第一个问题用掉的步数会让门禁从第一次调用起就拦下所有探索类工具（步数上限是**每问题**的）。
     resetLedger(session)
-    // B4：清空 steering 队列。上一题的治理提示若还没被 drain 就留在了 Agent 队列里——
-    // `agent-loop.ts:259` 只在**轮末**drain，而退出路径（`shouldStopAfterTurn` 为真、或 abort）
+    // 清空 steering 队列。上一题的治理提示若还没被 drain 就留在了 Agent 队列里——
+    // 只在**轮末**drain，而退出路径（`shouldStopAfterTurn` 为真、或 abort）
     // 会跳过那一步。不清的话，上一题「已经停滞 4 步，请换 region」会作为**新题的第一条输入**
     // 出现，模型会拿它当本题的上下文——串题，而且极难从结果里反查出来。
     agent.clearSteeringQueue()
@@ -380,7 +376,6 @@ export async function runQuestion(
     })
   }
   // 感知模式：打开 slide 时预置导航器基线（问题无关密度采样）进 roiCache，多问题复用、agent 直连 perceive 免二次 detect。
-  // perceive 已并入工具集（13 工具），基线始终预置。
   if (session) {
     try {
       await ensureBaseline(session, session.currentWsiId)
@@ -388,9 +383,7 @@ export async function runQuestion(
       console.warn(`[runner] 导航器基线预置失败（不阻塞）: ${e instanceof Error ? e.message : String(e)}`)
     }
   }
-  // A4（2026-09-10）：**per-case 墙钟截止**。此前只有「工具数上限」式护栏（当时只在评测侧，
-  // 即 `eval_core.ts` 的 `MAX_TOOLS`；B4 起同一个上限已下沉到产品层 `PATHASK_MAX_TOOLS` /
-  // `resolveMaxTools()`，两处同源），没有任何时间上限；工具数够但每步都慢时整例会无限拖（实测单例最长 623s）。
+  // **per-case 墙钟截止**。工具数上限管不住「步数不多但每步都慢」——没有时间上限时整例会无限拖。
   // 到点 abort → 在途工具被 ctx.signal 掐断（其已产生的观测保留并标 partial）→ 走下面的兜底收尾。
   const caseBudgetMs = Number(process.env.PATHASK_CASE_TIMEOUT_MS ?? 900_000)
   const deadline = setTimeout(() => {

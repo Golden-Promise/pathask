@@ -1,6 +1,6 @@
 import type { Capability, KnowledgeEntry, OverviewCache, SimilarCaseRecord } from '../types'
 
-// ---------- 能力库（mock 注册，Phase 3 换成真实 STREAM 权重 + h5） ----------
+// ---------- 能力库（mock 注册） ----------
 export const MOCK_CAPABILITIES: Capability[] = [
   {
     id: 'tcga-brca-er',
@@ -52,7 +52,7 @@ export const MOCK_CAPABILITIES: Capability[] = [
   },
 ]
 
-// ---------- 临床表（mock，Phase 3 读真实 CSV/TSV） ----------
+// ---------- 临床表（mock） ----------
 export const MOCK_CLINICAL: Record<string, Record<string, string>> = {
   'TCGA-AB-0001': {
     er: 'positive',
@@ -82,7 +82,7 @@ export const MOCK_CLINICAL: Record<string, Record<string, string>> = {
   },
 }
 
-// ---------- 知识库（初始策划 JSON，Phase 2 可换 LLM 检索） ----------
+// ---------- 知识库 ----------
 export const MOCK_KNOWLEDGE: KnowledgeEntry[] = [
   {
     id: 'k-luminal',
@@ -110,7 +110,7 @@ export const MOCK_KNOWLEDGE: KnowledgeEntry[] = [
   },
 ]
 
-// ---------- 相似病例索引（mock，Phase 2 用 CONCH embedding 重建） ----------
+// ---------- 相似病例索引（mock） ----------
 export const MOCK_SIMILAR: SimilarCaseRecord[] = [
   { id: 'sc-1', case_id: 'TCGA-AB-0005', diagnosis: '浸润性导管癌（IDC）', subtype: 'Luminal B', cancer: 'breast', embedding: [0.1, 0.3, 0.8, 0.4] },
   { id: 'sc-2', case_id: 'TCGA-AC-0002', diagnosis: '浸润性导管癌（IDC）', subtype: 'Luminal A', cancer: 'breast', embedding: [0.2, 0.25, 0.75, 0.3] },
@@ -118,7 +118,7 @@ export const MOCK_SIMILAR: SimilarCaseRecord[] = [
   { id: 'sc-4', case_id: 'PUB-SCLC-012', diagnosis: '小细胞癌（SCLC）', cancer: 'lung', embedding: [0.9, 0.1, 0.3, 0.5] },
 ]
 
-// ---------- WSI 全览缓存（mock，Phase 2 用 OpenSlide 真生成） ----------
+// ---------- WSI 全览缓存（mock） ----------
 export const MOCK_WSI: Record<string, OverviewCache> = {
   slide_brca_001: {
     slide_id: 'slide_brca_001',

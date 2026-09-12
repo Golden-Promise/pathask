@@ -1,5 +1,5 @@
-/** 并发原语（2026-09-10 从 tools/describePatch.ts 抽出，供 patchCache / 其他无界扇出复用）。
- *  抽出动机：describe_patch 的批量 VLM 调用一直有并发上限（对齐 patho-r1 `--max-num-seqs 4`），
+/** 并发原语（供 patchCache / 其他无界扇出复用）。
+ *  抽出动机：describe_patch 的批量 VLM 调用一直有并发上限，
  *  但同类的 `Promise.all` 扇出（切块等）是无界的——抽成公共件后统一收口。 */
 
 /** 带并发上限的 map（保序；fn 收 index）：保证同刻在途 ≤ limit。单个项异常直接向上抛（由调用方 Settled 化）。 */

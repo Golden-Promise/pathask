@@ -15,21 +15,10 @@ import { resilient } from '../util/resilience'
 const SITE_BONUS = 2
 const SITE_PENALTY = 4
 const CANCER_DIAGNOSIS: Record<string, string[]> = {
-  // F9（2026-08-30）：breast 表补齐「良性/反应性病变」（此前缺——其他所有癌种表初查栏都有良性兜底，唯独乳腺没有）。
-  // 缺它导致乳腺标本判良性时 siteAdjust 扣 -SITE_PENALTY(4)、判叶状反加 +SITE_BONUS(2)，助推乳腺良性/交界
-  // 病灶被误判叶状肿瘤。同时移除「叶状肿瘤（Phyllodes）」（叶状已走独立 phyllodes 癌种表 L14，不该作为乳腺
-  // 默认先验加成；既避免 SITE_BONUS 误加，也防「乳腺→叶状」的系统倾向）。
-  // F9（2026-08-30）：breast 表移除「小细胞癌（SCLC）」——乳腺原发性 SCLC 极罕见（几乎都是转移/先见于肺），
-  // 留在乳腺先验表会让乳腺判 SCLC 时 siteAdjust +SITE_BONUS，助推「交界增生→小细胞癌」的误判（曾有一例
-  // 乳腺切片即此，GT=ADH/交界却判 SCLC）。真需判 SCLC 时靠形态 weight 命中，不必用部位先验加成。该表现只放乳腺
-  // 常见原发肿瘤 + 良性兜底。
   breast: ['浸润性导管癌（IDC）', '浸润性小叶癌（ILC）', '导管原位癌（DCIS）', '腺样囊性癌', '良性/反应性病变'],
   phyllodes: ['叶状肿瘤（Phyllodes）', '良性/反应性病变'],
   ovary: ['卵巢癌（HGSC）', '良性/反应性病变'],
   thyroid: ['甲状腺病变', '良性/反应性病变'],
-  // F9（2026-08-30）：lung 表补齐——原来只有 SCLC（肺标本判腺癌/良性会 siteAdjust -4、判 SCLC 才 +2，
-  // 系统性把肺标本推向 SCLC，与乳腺叶状/SCLC 同类「先验表放错/不全」）。肺常见肿瘤=肺腺癌（最常见）+ SCLC
-  // + 良性兜底（肺恶性肿瘤还有鳞癌但 DIAGNOSIS_RULES 未建，先放已建模的肺腺癌/SCLC + 良性；后续可补鳞癌）。
   lung: ['肺腺癌', '小细胞癌（SCLC）', '良性/反应性病变'],
   prostate: ['前列腺腺癌（腺泡腺癌）', '前列腺增生（良性）', '良性/反应性病变'],
   colon: ['结肠腺癌', '管状腺瘤（良性）', '溃疡性结肠炎（良性）', '良性/反应性病变'],
@@ -87,7 +76,7 @@ function siteOfDiagnosis(name: string): Cancer | null {
 }
 
 /** 部位感知软门：仅当「无部位约束(cancer 未知→惰性)」或「该诊断无固有部位」或「部位==切片癌种」时放行；
- *  部位不同则丢弃——直接修复胃/结肠切片列卵巢癌(HGSC)的串位。 */
+ *  部位不同则丢弃。 */
 function organGated(diagnosis: string, cancer: Cancer | undefined): boolean {
   if (!cancer) return true
   const site = siteOfDiagnosis(diagnosis)
@@ -125,7 +114,7 @@ function siteAdjust(diagnosis: string, cancer: Cancer | undefined): number {
 }
 
 /** 诊断候选规则：positive 命中加权支持；negative 命中强反对（否定优先，词序排正则前）。
- *  覆盖项目 7 套数据癌种 + 通用病理诊断。特异性词 weight 更高（"叶状"/"小细胞"比泛词"浸润性生长"特异）。 */
+ *  特异性词 weight 更高（"叶状"/"小细胞"比泛词"浸润性生长"特异）。 */
 interface DiagnosisRule {
   diagnosis: string
   positive: RegExp[]
@@ -136,10 +125,6 @@ interface DiagnosisRule {
 export const DIAGNOSIS_RULES: DiagnosisRule[] = [
   {
     diagnosis: '叶状肿瘤（Phyllodes）',
-    // F9（2026-08-30）：收紧正则——去掉宽泛的 /叶状/ /分叶状/ /良性叶状/（乳腺"分叶状结构""叶状腺体"
-    // 等良性形态词会误命中），只保留特异诊断词。Patho-R1 VLM 顺口说一句 "Phyllodes tumor" 不再重罚。
-    // weight 3→2：叶状不是比 IDC/ILC 更"特异"的癌种，不该有 3 级特权（多数癌种为 2）。残留 /phyllodes/
-    // 是英文整词（病理语境几乎仅指叶状肿瘤），去掉 /叶状/ 单字后需靠 /叶状肿瘤/ /phyllodes/ 命中。
     positive: [/叶状肿瘤/, /phyllodes/, /梭形细胞肉瘤/, /叶状肿瘤型/],
     negative: [/未见叶状/, /非叶状/, /除外叶状/, /no phyllodes/, /not phyllodes/, /纤维腺瘤/],
     weight: 2,
@@ -186,7 +171,6 @@ export const DIAGNOSIS_RULES: DiagnosisRule[] = [
     negative: [/未见腺样囊性/, /除外腺样囊性/],
     weight: 2,
   },
-  // ===== PARE v0.1 扩展癌种（通用诊断）=====
   {
     diagnosis: '前列腺腺癌（腺泡腺癌）',
     positive: [/前列腺腺癌/, /前列腺癌/, /prostat\w* (carcinoma|adenocarcinoma)/, /prostatic (carcinoma|adenocarcinoma)/, /gleason/, /前列腺/],
@@ -237,11 +221,6 @@ export const DIAGNOSIS_RULES: DiagnosisRule[] = [
   },
   {
     diagnosis: '肺腺癌',
-    // F9（2026-08-30）：补肺腺癌规则——肺标本 7 例中 3 例是肺腺癌（N/低分化/微浸润 lepidic），但 DIAGNOSIS_RULES
-    // 之前完全缺失（CANCER_DIAGNOSIS.lung 表也只列 SCLC），导致肺标本无法判出正确诊断、还被肺癌先验推向 SCLC。
-    // positive 用肺特异词（肺腺癌/lung adenocarcinoma/pulmonary/lepidic 贴壁生长）+ 癌型通用词 /腺癌/ /adenocarcinoma/
-    // （靠 siteAdjust 按癌种归属肺，实现「肺标本+腺癌信号→肺腺癌」，同乳腺 A0J5 部位默认归 IDC 的逻辑）。
-    // negative 排除其他具体腺癌（结肠/胃/胰腺等由各自部位特异词处理，不靠排除）。
     positive: [/肺腺癌/, /lung (adeno)?carcinoma/, /pulmonary (adeno)?carcinoma/, /lepidic/, /贴壁生长/, /支气管肺泡癌/, /bronchioloalveolar/],
     negative: [/未见肺腺癌/, /非肺腺癌/, /小细胞/, /small cell/],
     weight: 3,
@@ -296,11 +275,6 @@ export const DIAGNOSIS_RULES: DiagnosisRule[] = [
   },
   {
     diagnosis: '良性/反应性病变',
-    // F9（2026-08-30）：weight 2→3（与多数癌种持平，不再低于肿瘤规则——否则 Patho-R1 VLM 判"良性/纤维腺瘤"
-    // 时，良性证据压不住顺口说出的特异肿瘤名如 "Phyllodes"，PARE v0.2 多例交界/良性病灶被误判叶状肿瘤）。
-    // positive 补"良性主标签"（/Benign lesion/ /良性病变/ = VLM 的结论标签，是最强的良性信号）与具体良性诊断
-    // （纤维腺瘤/fibroadenoma——乳腺最常见良性肿瘤，VLM 常正确命中）。negative 仍为恶性护城河（真恶性时将其重罚，
-    // 避免良性 weight 抬高后误判恶性，见 ruleMatch 否定逻辑）。
     positive: [/良性/, /反应性/, /细胞温和/, /未见异型/, /未见异型性/, /基底膜完整/, /推挤性边界/, /无浸润/, /纤维上皮/, /未见癌/, /intact/, /no evidence of/, /benign/, /reactive/, /Benign lesion/, /良性病变/, /纤维腺瘤/, /fibroadenoma/],
     negative: [/恶性/, /癌/, /异型细胞巢/, /间质见异型/, /浸润性生长/, /malignant/, /carcinoma/, /invasion/],
     weight: 3,
@@ -328,17 +302,15 @@ function genericScore(blob: string): number {
 }
 
 /** 部位默认：部位已知 + 有通用恶性信号 → 该部位最常见恶性诊断额外加分。
- *  临床逻辑：病理医生见到乳腺浸润癌默认先考虑 IDC、卵巢默认 HGSC，特异形态再细分亚型。
- *  （乳腺 A0J5 的 VLM 描述只说 "invasive glandular"，不会主动说 "ductal"，靠部位默认归位 IDC。） */
+ *  临床逻辑：病理医生见到乳腺浸润癌默认先考虑 IDC、卵巢默认 HGSC，特异形态再细分亚型。 */
 const DEFAULT_MALIGNANT_BONUS = 4
 
-/** F2：主诊断是肿瘤性诊断、而某条证据强命中「良性/反应性病变」正向（如"Benign lesion: Fibrous histiocytoma"）
- *  → 该证据反对主诊断。阈值 2：实测良性 describe 文本 benignSupport=6、run_mil "Malignant"=0、detect_roi
- *  "carcinoma/atypical cells"=0，均不误伤；需人工校准的用 18 例 A/B 调整。 */
+/** 主诊断是肿瘤性诊断、而某条证据强命中「良性/反应性病变」正向（如"Benign lesion: Fibrous histiocytoma"）
+ *  → 该证据反对主诊断。阈值 2。 */
 const BENIGN_AGAINST_THRESHOLD = 2
 
-/** F8：run_mil 预测类别 → 主诊断方向（能力语义，替代 capability 名称的文本匹配）。
- *  - 分子分类器（tp53/hrd，labels 无良性/恶性/交界语义）→ 无诊断方向（§4 能力语义对齐待办）；
+/** run_mil 预测类别 → 主诊断方向（能力语义）。
+ *  - 分子分类器（tp53/hrd，labels 无良性/恶性/交界语义）→ 无诊断方向；
  *  - 肿瘤分型分类器（phyllodes-tumor）：良性类 → 支持良性主诊断 / 反对肿瘤性主诊断；
  *    肿瘤性类（malignant/borderline 等）→ 支持该癌种肿瘤性主诊断 / 反对良性主诊断。 */
 function milPolarityOf(
@@ -356,7 +328,7 @@ function milPolarityOf(
   return primary === '良性/反应性病变' ? 'against' : 'support'
 }
 
-/** F10：describe_patch 5-label → 注入投票 blob 的文档 token（让现有 DIAGNOSIS_RULES 直接对该 label 投票）。
+/** describe_patch 5-label → 注入投票 blob 的文档 token（让现有 DIAGNOSIS_RULES 直接对该 label 投票）。
  *  只认 describe_patch 的 morph_label（与 run_mil 的 source.label 用 capability_id 区分，互不串）。 */
 function labelDocToken(label: string | undefined): string {
   switch (label) {
@@ -368,7 +340,7 @@ function labelDocToken(label: string | undefined): string {
   }
 }
 
-/** F10：describe_patch 5-label → 相对主诊断方向（用于 contradicts 边 + morphAgainst 保守压置信）。
+/** describe_patch 5-label → 相对主诊断方向（用于 contradicts 边 + morphAgainst 保守压置信）。
  *  只处理斩钉截铁的良/恶；premalignant / normal / N/A 返回 undefined（不强判，交给投票 blob 的
  *  DCIS/良性 token 与形态文本，避免"原位癌/正常"被误当成反对主诊断的强信号）。 */
 function labelPolarityOf(label: string | undefined, primary: string): 'support' | 'against' | undefined {
@@ -390,8 +362,7 @@ function stripIdTokens(text: string): string {
 /**
  * 鉴别假设子句——形态模型在描述里列的「需鉴别于 X / 鉴别诊断：X / differential includes X / should be
  * considered X」是【排除候选/考虑项】，不是已确认发现。若把这些病名当作该癌的证据去投票/喂给决策 LLM，
- * 就形成「描述器只说一句要排除 X → 引擎把 X 认证成发现」的自证回环（病理实况：04473 结肠良性写
- * "differential includes colorectal adenocarcinoma" → 结肠腺癌规则自 +3，把良性打成癌症）。
+ * 就形成「描述器只说一句要排除 X → 引擎把 X 认证成发现」的自证回环。
  *
  * 本函数在证据进入【决策/投票读眼】前一律先中性化：把这类假设子句替换为占位符，使其不再触发任何诊断规则。
  * 只中性化【列鉴别】标记（需鉴别/鉴别诊断/differential/considered），不碰「rule out/已排除」这类
@@ -419,7 +390,7 @@ function clinicalClaim(claim: string): string {
   for (const m of lower.matchAll(HYPOTHESIS_CN)) pushSpan(m, HYPOTHESIS_CN_END)
   for (const m of lower.matchAll(HYPOTHESIS_EN)) pushSpan(m, HYPOTHESIS_EN_END)
   // 从后往前替换占位，索引不漂移。占位符必须【不含】任何否定词(排除/未见/无…)或诊断规则词，
-  // 否则会污染其后真词的 isNegated 判定 / 规则命中（实测"排除"曾把良性支持 3 误打成反对 6）。
+  // 否则会污染其后真词的 isNegated 判定 / 规则命中。
   let out = stripped
   for (const [s, e] of [...spans].sort((a, b) => b[0] - a[0])) {
     out = out.slice(0, s) + ' 〔所列鉴别〕 ' + out.slice(e)
@@ -467,7 +438,7 @@ function ruleScore(rule: DiagnosisRule, claim: string): number {
   return support - against
 }
 
-/** F6：鉴别证据精确摘录——取规则实际命中的短语（±短上下文），替代把整段证据文本挂到鉴别诊断
+/** 鉴别证据精确摘录——取规则实际命中的短语（±短上下文），替代把整段证据文本挂到鉴别诊断
  *  （"Benign lesion: Fibrous histiocytoma"整段当 DCIS 支持证据会误导）。完整 claim 保留在证据图节点，
  *  只改 differential 的呈现字段。方向判定与 ruleMatch 同构（否定感知）。 */
 function evidenceExcerpt(rule: DiagnosisRule, claim: string, ctxChars = 12, max = 3): { for: string[]; against: string[] } {
@@ -523,7 +494,7 @@ const GATE_TOOLS = new Set(['describe_patch', 'verify_region', 'run_mil'])
 
 /** 诊断谱条目的正性形态证据签名命中：claim 经 clinicalClaim 中性化「需鉴别于X」后，
  *  evToken 在子句内命中且未被否定修饰 → 支持。刻意不豁免「cannot exclude invasive carcinoma」
- *  （那正是 canary 要拦的自证，靠 isNegated 的 NEG_PREFIX 覆盖 cannot exclude）。 */
+ *  （那正是要拦的自证，靠 isNegated 的 NEG_PREFIX 覆盖 cannot exclude）。 */
 export function spectrumSupport(entry: SpectrumEntry, claims: string[]): { ok: boolean; excerpts: string[] } {
   const excerpts: string[] = []
   let ok = false
@@ -568,11 +539,11 @@ function voteDiagnoses(
   candidates: DiagnosisCandidate[]
   polarityOf: (node: EvidenceNode) => 'support' | 'against' | undefined
 } {
-  // F1：只投「可投票证据」（observation + run_mil inference）。剔除 analyze_evidence / counterfactual 生成的
+  // 只投「可投票证据」（observation + run_mil inference）。剔除 analyze_evidence / counterfactual 生成的
   // 聚合推理节点（上一轮"综合推断/诊断"文本自引用 → 诊断被自锁），也剔除 query_knowledge / retrieve_similar_case
   // 背景参考（相似病例文本里含诊断名如"叶状肿瘤-Borderline"，会被规则误当成当前病例形态证据）。
   const caseObs = obs.filter(isVoteEvidence)
-  // F10：describe_patch 的 5-label 注入 blob（现有规则直接投票）。claim 仍是纯形态文本（GT 合规、作摘录），
+  // describe_patch 的 5-label 注入 blob（现有规则直接投票）。claim 仍是纯形态文本（GT 合规、作摘录），
   // label 是独立的结构化方向信号——二者分工：claim 提供"为什么/哪句"的可追溯摘录，label 提供"该块属于哪类"的判断。
   const blob = caseObs
     .map((n) => {
@@ -596,7 +567,7 @@ function voteDiagnoses(
     .filter((s) => s.score > 0)
     .sort((a, b) => b.score - a.score)
     .map(({ rule, score }) => {
-      // F6：只挂实际命中的短语（±上下文），不挂整段证据文本（否则整段良性文本会被当成恶性候选的"支持"）
+      // 只挂实际命中的短语（±上下文），不挂整段证据文本（否则整段良性文本会被当成恶性候选的"支持"）
       const { for: forHits, against: againstHits } = caseObs.reduce(
         (acc, n) => {
           const e = evidenceExcerpt(rule, n.claim)
@@ -613,16 +584,16 @@ function voteDiagnoses(
   const primary = primaryRule ? primaryRule.diagnosis : '待进一步评估（证据不足）'
 
   // 每条证据相对主诊断的方向：run_mil 按能力语义（预测类别）；其余命中主诊断 positive → support、
-  // 命中主诊断 negative → against；强良性信号 → 反对肿瘤性主诊断（F2）。
+  // 命中主诊断 negative → against；强良性信号 → 反对肿瘤性主诊断。
   const polarityOf = (node: EvidenceNode): 'support' | 'against' | undefined => {
     if (!primaryRule) return undefined
-    // F8：run_mil 预测类别 → 诊断方向（替代 capability 名称的文本匹配）
+    // run_mil 预测类别 → 诊断方向
     if (node.source.tool === 'run_mil' && node.source.capability_id) {
       const cap = capabilityRegistry.get(node.source.capability_id)
       const milPol = milPolarityOf(node, primary, cancer, cap)
       if (milPol) return milPol
     }
-    // F10：describe_patch 5-label 明确方向——形态学文本未必含规则关键词（"核多形性/巢状"不含 IDC 特异词），
+    // describe_patch 5-label 明确方向——形态学文本未必含规则关键词（"核多形性/巢状"不含 IDC 特异词），
     // 斩钉截铁的良/恶 label 直接裁定方向（优先于文本匹配），premalignant/normal/N/A 交回文本匹配。
     if (node.source.tool === 'describe_patch' && node.source.morph_label) {
       const lab = labelPolarityOf(node.source.morph_label, primary)
@@ -631,7 +602,7 @@ function voteDiagnoses(
     const { support, against } = ruleMatch(primaryRule.rule, node.claim)
     if (against > 0) return 'against' // 否定优先：被否定的 positive 或显式 negative 都是反对主诊断的信号
     if (support > 0) return 'support'
-    // F2：主诊断是肿瘤性诊断，但该证据强命中「良性/反应性病变」正向（"Benign lesion: …"）→ 反对主诊断。
+    // 主诊断是肿瘤性诊断，但该证据强命中「良性/反应性病变」正向（"Benign lesion: …"）→ 反对主诊断。
     // 这让 VLM 的良性描述以 1−conf 计入聚合、形成 contradicts 边，而不是中性全置信计入 + supports 边。
     if (primary !== '良性/反应性病变') {
       const benignRule = DIAGNOSIS_RULES.find((r) => r.diagnosis === '良性/反应性病变')!
@@ -645,10 +616,10 @@ function voteDiagnoses(
 
 /** 证据驱动鉴别 = 投票候选（已由 voteDiagnoses 按 ruleScore+genericScore+部位先验打分、并按节点命中短语
  *  生成 evidenceFor/Against）经【部位门】+【证据门】过滤后的投影。
- *  - 部位门：organGated——掉落如胃切片列卵巢癌(HGSC)的跨器官诊断（串位修复）。
+ *  - 部位门：organGated——掉落如胃切片列卵巢癌(HGSC)的跨器官诊断。
  *  - 证据门：evidenceFor 为空 = 无任何证据明确支持该诊断为"可能" → 掉，宁少不凑
  *    （只有证据反对 = 已被排除，不属于"需排除"清单）。纯通用信号垫底候选也被此门挡住。
- *  不再用 DEFAULT_DIFF 固定池补齐。置信 = 主诊断置信 +0.15 且 ≤0.85（避免鉴别 > 主诊断的刻度别扭）。 */
+ *  置信 = 主诊断置信 +0.15 且 ≤0.85（避免鉴别 > 主诊断的刻度别扭）。 */
 function organGateCandidates(
   candidates: DiagnosisCandidate[],
   cancer: Cancer | undefined,
@@ -661,7 +632,7 @@ function organGateCandidates(
   const seen = new Set<string>([primary])
   for (const c of candidates) {
     if (c.diagnosis === primary || seen.has(c.diagnosis) || dds.length >= max) continue
-    if (!organGated(c.diagnosis, cancer)) continue              // 部位门（串位修复）
+    if (!organGated(c.diagnosis, cancer)) continue              // 部位门
     if (c.evidenceFor.length === 0) continue                    // 证据门（活的可能鉴别）
     seen.add(c.diagnosis)
     dds.push({
@@ -677,8 +648,6 @@ function organGateCandidates(
 // ============================================================================
 // ⚠️ 决策层面板：PATHASK_DECISION=rule（关键词投票）| llm（LLM 诊断决策，默认）
 // ============================================================================
-// 2026-09-04 默认由 rule 切到 llm：规则投票层有"部位先验→第一位癌"的恶性偏向。
-// 保留 PATHASK_DECISION=rule 可一键回退（评测基线对照时用）。
 const DECISION_MODE = (process.env.PATHASK_DECISION ?? 'llm') as 'rule' | 'llm'
 
 /** LLM 决策的诊断输出。主诊断、聚合置信、鉴别、每条证据方向。
@@ -700,10 +669,9 @@ async function callDecisionLlm(system: string, user: string, signal?: AbortSigna
   const baseUrl = QWEN3_8B.baseUrl
   const apiKey = llmApiKey(baseUrl)
   // 本分支对**内网端点不可达**（llmApiKey 对内网缺 key 返回占位 'EMPTY'），故文案保持硅基措辞：
-  // toolErrors.ts:338 的 `/缺少 SILICONFLOW_API_KEY/` 按字面量匹配，改了会静默错分类。
+  // toolErrors.ts 的 `/缺少 SILICONFLOW_API_KEY/` 按字面量匹配，改了会静默错分类。
   if (!apiKey) throw new Error('缺少 SILICONFLOW_API_KEY')
   const proxyAgent = llmProxyAgent(baseUrl)
-  // 决策 LLM 此前**完全没有超时**（全仓唯一有超时的是 VLM fetch）→ 服务端挂起即整例卡死。
   // 单次上限**随端点**（硅基 240s 是为「抽签端点」给的余量；本地 120s 已是 6.5× 余量）。
   // 与工具预算/agent 中止合成（取先到者）。仍**不自动重试**——超时即回落规则投票，行为不变。
   const llmTimeout = AbortSignal.timeout(llmTimeoutMs(baseUrl))
@@ -717,7 +685,7 @@ async function callDecisionLlm(system: string, user: string, signal?: AbortSigna
       max_tokens: 4096,
       temperature: 0,
       // 与编排器同一份分派：硅基 → 顶层 enable_thinking；vLLM → chat_template_kwargs
-      // （顶层对 vLLM 是空操作，会让每次决策白跑一遍思考：实测 1079tok/40.4s vs 478tok/18.1s）。
+      // （顶层对 vLLM 是空操作，会让每次决策白跑一遍思考）。
       ...thinkingFields(baseUrl, false),
     }),
     dispatcher: proxyAgent,
@@ -800,7 +768,7 @@ export const DECISION_SYSTEM = `你是病理阅片决策助手。你收到同一
 【输出格式】严格 JSON，无包裹文本：
 {"primary_diagnosis":"规范中文病种名","confidence":0到1,"uncertainty":"none|insufficient_evidence|evidence_conflict|model_limitation","differential":[{"diagnosis":"…","confidence":0到1,"note":"一句理由"}],"evidence_verdicts":[{"id":"证据id","direction":"support|against","note":"一句理由"}],"rationale":"一两句整体判断，引用具体证据"}`
 
-/** 把决策 LLM 的原始输出（ai）加工成最终主诊断 + 证据门控的鉴别诊断（纯函数，不调 LLM——可被探针确定性驱动）。
+/** 把决策 LLM 的原始输出（ai）加工成最终主诊断 + 证据门控的鉴别诊断（纯函数，不调 LLM）。
  *  - 主诊断：resolveDiagnosis 规范化到谱的 accept 对齐名；不在谱且部位不符 → 兜底"待进一步评估"。
  *  - 鉴别：先规范化（谱名），再【部位门 organGated】+【证据门 polarity-parity】双门；良恶性同向信任 LLM、跨向（良性主→恶性鉴）需正性形态证据，否则 drop（防回答泄露）。
  *  - candidate 兜底：organGateCandidates（已自做双门）追加 LLM 未列的确定性候选。
@@ -822,10 +790,8 @@ export function finalizeLlmDiagnosis(
   const primary = primaryRaw
     ? (resolveDiagnosis(primaryRaw)?.name ?? (organGated(primaryRaw, cancer) ? primaryRaw : '待进一步评估（证据不足）'))
     : '待进一步评估（证据不足）'
-  // B（2026-09-07）接收端护栏：DECISION_SYSTEM 第7条已要求按证据强度报值（强>0.7≤0.85/弱≤0.5/良≤0.7），
-  // 但 7B 遵守度存疑（旧 prompt 已写"待进一步评估≤0.5"仍对证据不足报 0.95 良性）。此处只压置信、不改诊断词
-  // （direction 不变 → 指标中性，消 overconfident_wrong 表征）。0.85 是普适上限（镜下形态+单次整合到不了
-  // "十分确定"，禁 1.0/≥0.9 极端）。刻意不在此做证据聚合重算（那是信号层 A 方案，避免与 VLM 洗白耦合）。
+  // 此处只压置信、不改诊断词。
+  // 0.85 是普适上限（镜下形态+单次整合到不了"十分确定"，禁 1.0/≥0.9 极端）。
   const confidence = Math.min(0.85, clamp01(ai.confidence))
   const merged: DifferentialDiagnosis[] = []
   const seen = new Set<string>([primary])
@@ -838,12 +804,11 @@ export function finalizeLlmDiagnosis(
     const e = resolveDiagnosis(name)
     const cdx = e?.name ?? name
     if (!cdx || cdx === primary || seen.has(cdx)) continue
-    if (!organGated(cdx, cancer)) { droppedOrganMismatch++; continue }   // 部位门（串位修复）
+    if (!organGated(cdx, cancer)) { droppedOrganMismatch++; continue }   // 部位门
     // 证据门（防回答泄露，polarity-parity）：【只】在「良性主诊断 + 恶性鉴别候选」这一危险方向上设硬地板——
-    // 必须有过谱正性形态证据（破坏性浸润等）否则 drop（04473 类「良性片被列癌」泄漏；词面已清洗，
+    // 必须有过谱正性形态证据（破坏性浸润等）否则 drop（词面已清洗，
     // 结肠癌 evTokens=['adenocarcinoma','carcinoma'] 不会误命中良性炎症措辞）。其余方向【一律信任决策 LLM 的
-    // 鉴别判断】直接保留、只摘录证据——LLM 已见完整证据包，它既列了就认为值得排除。这修复 evToken 词面
-    // 不匹配 VLM 措辞导致的 recall 饿死（反应性vs癌、恶性主→良恶性辨别、癌前→排除微浸润等关键鉴别不再被误杀）。
+    // 鉴别判断】直接保留、只摘录证据——LLM 已见完整证据包，它既列了就认为值得排除。
     let evidenceFor: string[] = []
     if (e) {
       const s = spectrumSupport(e, gateClaims)
@@ -861,14 +826,12 @@ export function finalizeLlmDiagnosis(
     }
     seen.add(cdx)
     // evidence_for 只放【形态证据】（gate 摘录），绝不回落 LLM 的 note（rationale 是推理非形态支持，
-    // 用 note 会把良性叙述包装成恶性鉴别的"支持"，如 run-1 的「缺乏浸润性癌结构证据」当支持——泄漏根因）。
+    // 用 note 会把良性叙述包装成恶性鉴别的"支持"）。
     merged.push({ diagnosis: cdx, confidence: clamp01(d?.confidence), evidence_for: evidenceFor, evidence_against: [] })
   }
   for (const dd of organGateCandidates(candidates, cancer, primary, confidence)) {
     if (seen.has(dd.diagnosis)) continue
     // 证据门：确定性 backstop 与 LLM 项同等对待——必须有正性形态证据支持才放行。
-    // 此前 backstop 只看 evidenceFor.length>0（rule 正则命中），良性片"benign glandular mucosa"
-    // 类正性命中会把这当成恶性/腺瘤鉴别的"支持"造成泄漏（_tmp_repro3 实拍 [[结肠腺癌]]上良性case）。
     const be = resolveDiagnosis(dd.diagnosis)
     const ok = be ? spectrumSupport(be, gateClaims).ok : dd.evidence_for.length > 0
     if (!ok) { droppedNoEvidence++; continue }
@@ -909,7 +872,7 @@ async function llmDiagnose(
 ${buildEvidencePack(voteObs)}
 
 请整合上述证据，给出综合诊断决策（严格 JSON）。`
-  // Step 0/1：分端点计时 + 熔断。scope=当前 slide：决策 LLM 超时既可能是服务端排队（服务级），
+  // 分端点计时 + 熔断。scope=当前 slide：决策 LLM 超时既可能是服务端排队（服务级），
   // 也可能是本病例上下文特别长（病例级）——按片子分片后，只有跨病例同时超时才升级为服务级熔断。
   const ai = await resilient(
     { endpoint: 'llm', op: 'decide', scope: ctx.session.currentWsiId, sink: ctx.session.metrics },
@@ -927,7 +890,7 @@ ${buildEvidencePack(voteObs)}
     const d = verdictMap.get(n.id)
     return d === 'against' ? 'against' : d === 'support' ? 'support' : undefined
   }
-  // 主诊断规范化 + 鉴别双重门控（部位门 + 证据门）抽到纯函数（可被探针确定性驱动）
+  // 主诊断规范化 + 鉴别双重门控（部位门 + 证据门）抽到纯函数
   const gateClaims = voteObs
     .filter((n) => isVoteEvidence(n) && GATE_TOOLS.has(n.source.tool))
     .map((n) => clinicalClaim(n.claim))
@@ -941,15 +904,13 @@ ${buildEvidencePack(voteObs)}
   }
 }
 
-/** 13. 证据综合分析：观察/推理 → 证据图（含 contradicts 边）+ 主诊断 + 鉴别诊断 + 聚合置信度。
- *  核心升级（Phase 2 收尾）：deriveDiagnosis 从「精确匹配 mock 标签」改为「诊断候选投票」——
- *  真实 Patho-R1 自由文本（如"基底膜完整、无间质浸润"）也能正确归属；verify_region 的质疑自动形成 contradicts 边。 */
+/** 证据综合分析：观察/推理 → 证据图（含 contradicts 边）+ 主诊断 + 鉴别诊断 + 聚合置信度。
+ *  verify_region 的质疑自动形成 contradicts 边。 */
 export const analyzeEvidenceSpec: ToolSpec<typeof AnalyzeEvidenceSchema> = {
   name: 'analyze_evidence',
   label: '证据综合分析',
   description: '把已收集的观察/推理证据整合为证据图，投票出主诊断、鉴别诊断与聚合置信度；反对主诊断的证据标记为 contradicts 边。',
   parameters: Type.Object({}),
-  // 预算 420s：实测单次 max 269s（决策 LLM 长上下文 + 首包慢），取 ~1.5× 抓死锁而非压性能
   metadata: { category: 'reasoning', cacheable: false, idempotent: false, timeoutMs: 420_000 },
   execute: async (_params, ctx) => {
     const store = ctx.session.evidenceStore
@@ -973,12 +934,8 @@ export const analyzeEvidenceSpec: ToolSpec<typeof AnalyzeEvidenceSchema> = {
     let useRuleConfidence = DECISION_MODE === 'rule' // rule 置信靠 direction-化证据聚合；llm 置信由模型给出
     let zeroVoteEvidence = false
     if (voteObs.length === 0) {
-      // 零可投票证据的兜底（2026-09-11）。库存里**可能有节点**，但没有一条能投票的观察：
+      // 零可投票证据的兜底。库存里**可能有节点**，但没有一条能投票的观察：
       // 全是知识/检索背景、聚合节点，或观察被降级/退化标记后由 isVoteEvidence 排除掉。
-      // 此前这个状态会带着**空证据包**去问决策 LLM（buildEvidencePack([]) 返回空串，[证据] 段是空的），
-      // 而模型照样给得出一个带 ~0.6 置信的「良性/反应性病变」、uncertainty=null
-      // → **没采到样/基础设施故障**与「看过了、没见癌」在报告层面不可区分（桥挂死时实测复现；
-      //    rule 与 llm 两档同病，不是档位差异）。
       // 注意修在这里而不是抛错：抛 NO_EVIDENCE 后 runner 的「程序化补跑投票」兜底会再进来一次，
       // 良性诊断原样长回来——病在**结果**，不在调用。
       zeroVoteEvidence = true
@@ -1018,7 +975,7 @@ export const analyzeEvidenceSpec: ToolSpec<typeof AnalyzeEvidenceSchema> = {
       if (ma && confidence > 0.5) confidence = 0.5
       differential = organGateCandidates(candidates, cancer, primary, confidence)
     }
-    // 形态学金标准反向：describe_patch 方向与主诊断相反。⚠️ 修正陈旧误导——【llm 成功路径并不以此为置信压低】
+    // 形态学金标准反向：describe_patch 方向与主诊断相反。⚠️ 【llm 成功路径并不以此为置信压低】
     // （最终置信来自 finalizeLlmDiagnosis 的 clamp01(ai.confidence)+0.85上限，冲突时只靠 prompt 第7条诱导报 ≤0.5，
     //  代码层未强制）。此处 morphAgainst 仅用于下方 evidence_conflict / 保守处理信号，不横向改写 llm 置信。
     const morphAgainst = voteObs.some((n) => n.source.tool === 'describe_patch' && n.polarity === 'against')
@@ -1056,7 +1013,7 @@ export const analyzeEvidenceSpec: ToolSpec<typeof AnalyzeEvidenceSchema> = {
       confidence,
       differential,
       primaryNodeId: conclusion.id,
-      // F3：矛盾检测输入——generate_report 据此决定是否标 evidence_conflict（优先级在 model_limitation 之前）
+      // 矛盾检测输入——generate_report 据此决定是否标 evidence_conflict（优先级在 model_limitation 之前）
       againstCount,
       contradiction: againstCount > 0,
       contradiction_nodes: againstNodes,

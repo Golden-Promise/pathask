@@ -3,23 +3,19 @@ import type { Static } from '@earendil-works/pi-ai'
 import type { OverviewCache } from '../types'
 import { addEvidence, ensureWsi, realWsi, type ToolSpec } from './common'
 
-/** 缓存读路径开关（B5，2026-09-11，**默认开**）。
- *  只认显式的关闭值——与 `loopGuardEnforce` 同一套约定：写错一个字不该静默把缓存摘掉。
- *  A/B 用得上：这条路径省的是桥端墙钟，但「省」的前提是模型看到的东西一模一样。 */
+/** 缓存读路径开关（**默认开**）。
+ *  只认显式的关闭值——与 `loopGuardEnforce` 同一套约定：写错一个字不该静默把缓存摘掉。 */
 function scanCacheRead(): boolean {
   const raw = process.env.PATHASK_SCAN_CACHE_READ
   if (raw === undefined || raw.trim() === '') return true
   return !/^(0|false|off|no)$/i.test(raw.trim())
 }
 
-/** 1. 全片低倍扫描：组织覆盖 + 缩略图 + 全局描述。结果按 slide 缓存。
+/** 全片低倍扫描：组织覆盖 + 缩略图 + 全局描述。结果按 slide 缓存。
  *  真实路径：wsi-bridge（OpenSlide）读缩略图 + 组织掩膜 → 启发式全局描述（VLM 全览在 Patho-R1 就绪后替换）。
  *  mock 路径：会话 wsiCache 的预置数据（smoke 用）。
  *
- *  **B5 之前这里的缓存是装饰性的**：`wsiCache.set` 只在写，读只发生在桥失败后的 mock 兜底分支——
- *  也就是说"缓存"从未省下一次桥调用（`info`+`thumbnail`+`tissueMask` 三连每次都真发）。
- *  现在读路径放在 `realWsi(...)` **之前**，命中即直返；这正是探针 `probe_idempotent_meta`
- *  判定 `metadata.cacheable` 从"欠账"变成"机制"的依据（它比对的就是 get 与 realWsi 的先后）。 */
+ *  读路径放在 `realWsi(...)` **之前**，命中即直返。 */
 export const scanOverviewSpec: ToolSpec<typeof ScanOverviewSchema> = {
   name: 'scan_overview',
   label: '全片低倍扫描',
@@ -29,11 +25,11 @@ export const scanOverviewSpec: ToolSpec<typeof ScanOverviewSchema> = {
   execute: async (params, ctx) => {
     const id = ensureWsi(ctx, params.slide_id)
 
-    // ===== 缓存读路径（B5）：命中即直返，一次桥调用都不发 =====
-    // 位置是这段的全部要点：写在 `realWsi` 之后就成了 mock 兜底读，桥该走还得走（那正是旧样子）。
+    // ===== 缓存读路径：命中即直返，一次桥调用都不发 =====
+    // 位置是这段的全部要点：写在 `realWsi` 之后就成了 mock 兜底读，桥该走还得走。
     // ① 先断言 `metadata.cacheable === true`：读缓存返回**必须**由声明授权。
     //    声明与实现分居两处，靠这条把二者绑在一起——哪天有人拿掉声明，读路径自动关门，而不是
-    //    继续偷偷吃缓存。探针 `probe_idempotent_meta` 按源码正是查这一处消费。
+    //    继续偷偷吃缓存。
     // ② 返回**首次那份完整文本**（`result_text`），不在读路径重新拼一遍：拼一次就是第二套渲染，
     //    两处迟早不一致，而模型看到的文本恰恰是评测所依赖的东西。
     // ③ `addEvidence` 照做：节点数与"没有读路径"时**逐字一致**。省的是桥端墙钟，不是证据。

@@ -14,7 +14,7 @@ function scoreEntry(entry: KnowledgeEntry, blob: string): number {
   return score
 }
 
-/** 10. 知识检索：query/context 关键词加权命中策划病理知识库（top-K）。 */
+/** 知识检索：query/context 关键词加权命中策划病理知识库（top-K）。 */
 export const queryKnowledgeSpec: ToolSpec<typeof QueryKnowledgeSchema> = {
   name: 'query_knowledge',
   label: '病理知识检索',

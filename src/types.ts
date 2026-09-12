@@ -52,24 +52,24 @@ export interface EvidenceSource {
   degenerate?: boolean
   /** VLM **不可用**→ 确定性模板降级（describe_patch 的 describeFromLabel 兜底；与上一条区分：
    *  degenerate=模型吐了但输出是垃圾；fallback=模型没吐，内容是按 region_label 查表生成的）。
-   *  ⚠️ 该内容不是对这张图的观察，真 WSI 会话下同时带 `stub:true` 被排除出投票（见 describePatch.ts C2）。 */
+   *  ⚠️ 该内容不是对这张图的观察，真 WSI 会话下同时带 `stub:true` 被排除出投票（见 describePatch.ts）。 */
   fallback?: boolean
   /** run_mil 溯源：所用能力 id + 预测类别（供投票引擎按能力语义判定方向，而非匹配能力名称文本） */
   capability_id?: string
   label?: string
-  /** F10：describe_patch 5-label 结构化标签（malignant/premalignant/benign/normal/N/A），投票引擎按此+形态文本做方向判别。 */
+  /** describe_patch 5-label 结构化标签（malignant/premalignant/benign/normal/N/A），投票引擎按此+形态文本做方向判别。 */
   morph_label?: string
-  /** F10：describe_patch VLM 自行给出的 label 置信（0-1，原始值，仅溯源不参与聚合；聚合取 labelBalance 确定性档）。 */
+  /** describe_patch VLM 自行给出的 label 置信（0-1，原始值，仅溯源不参与聚合；聚合取 labelBalance 确定性档）。 */
   morph_confidence?: number
-  /** F7：VLM（Patho-R1）原始完整输出（含 think/answer 标签），供 JSON 报告追溯；claim 只存摘要。 */
+  /** VLM（Patho-R1）原始完整输出（含 think/answer 标签），供 JSON 报告追溯；claim 只存摘要。 */
   raw?: string
-  /** F5：run_mil attention 热点（level0 左上角，MIL 256×256 patch 网格坐标），报告期热点闭环确定性补描述用。 */
+  /** run_mil attention 热点（level0 左上角，MIL 256×256 patch 网格坐标），报告期热点闭环确定性补描述用。 */
   attention_hotspots?: { x: number; y: number; attn: number }[]
   /** 生成该证据的 pi-agent 工具调用 id：编排层 compactContext 折返时从 toolResult.toolCallId 反向定位
    *  到这个证据节点，用归纳句做 gist（而非把 claim 原文反复重放进消息历史）。 */
   toolCallId?: string
-  /** 工具超时/中断（2026-09-10）：该证据是**部分完成的真观测**——写入它的工具没跑完就被预算或 abort 掐断。
-   *  刻意**不做事务回滚**（观测是真的，describeCache 让重发廉价），只打标 + 在错误文本里报 k/n。
+  /** 工具超时/中断：该证据是**部分完成的真观测**——写入它的工具没跑完就被预算或 abort 掐断。
+   *  **不做事务回滚**（观测是真的，describeCache 让重发廉价），只打标 + 在错误文本里报 k/n。
    *  ⚠️ 不参与投票排除：partial 证据仍是有效观察（见 isVoteEvidence），打标是给决策层/报告看的诚实性信号。 */
   partial?: boolean
 }
@@ -134,7 +134,7 @@ export interface Analysis {
   confidence: number
   differential: DifferentialDiagnosis[]
   primaryNodeId: string
-  /** F3：反对主诊断的可投票证据数（generate_report 据此触发 evidence_conflict 不确定性） */
+  /** 反对主诊断的可投票证据数（generate_report 据此触发 evidence_conflict 不确定性） */
   againstCount: number
   /** 矛盾检测：是否有证据方向与主诊断相反；contradiction_nodes 供报告显式标注"VLM/描述与主诊断矛盾" */
   contradiction: boolean
@@ -176,7 +176,7 @@ export interface ToolMetadata {
   category: ToolCategory
   cacheable: boolean
   idempotent: boolean
-  /** 同参不同果（B1，2026-09-11）：VLM 采样类工具即使 `idempotent:true`（多次调用不改变世界状态），
+  /** 同参不同果：VLM 采样类工具即使 `idempotent:true`（多次调用不改变世界状态），
    *  重复**采样**仍有诊断价值，故不得被重复检测拦截。`governance.ts` 的策略硬规则据此把
    *  `block` 降级为 `hint`——这是「幂等」与「可重复」不是一回事的落点。 */
   nonDeterministic?: boolean
@@ -184,15 +184,12 @@ export interface ToolMetadata {
   repeatPolicy?: 'block' | 'hint' | 'exempt'
   depends_on?: string[]
   /** 单次工具调用墙钟预算（ms）；缺省取 PATHASK_TOOL_TIMEOUT_MS 或 300_000。
-   *  取实测 max 的 ~1.5×——**超时是「抓死锁」而非「压性能」**（合法慢路径真实存在：
-   *  4.95GP 单层巨片冷重算 mask ≈205s、CONCH 冷加载 ≈25s、决策 LLM 单次 max 269s）。 */
+   *  **超时是「抓死锁」而非「压性能」**（合法慢路径真实存在）。 */
   timeoutMs?: number
 }
 
-// ============ 工具错误分类（2026-09-10）============
-/** 工具失败的**统一 code 空间**。此前散落各工具的字面量（region_not_found / no_region / patch_not_found …）
- *  大小写与词表都不一致，且 details.error **无任何消费者**；throw 路径的 message 又被框架原样透传。
- *  这里一处定义，供 classifyToolError 分类 + softError 生成 + 账本/指标统计。 */
+// ============ 工具错误分类 ============
+/** 工具失败的**统一 code 空间**。这里一处定义，供 classifyToolError 分类 + softError 生成 + 账本/指标统计。 */
 export type ToolErrorCode =
   // —— 参数/引用类（模型可自我纠正）——
   | 'SLIDE_NOT_FOUND'
@@ -229,7 +226,7 @@ export type ToolErrorCode =
   | 'ABORTED'
   | 'UNKNOWN'
 
-/** 工具失败账本条目（session.toolErrors）：让 isError 这条此前**零消费者**的通道变得可观测。 */
+/** 工具失败账本条目（session.toolErrors） */
 export interface ToolErrorRecord {
   toolCallId: string
   tool: string
@@ -273,10 +270,9 @@ export interface OverviewCache {
   tissue_coverage: number
   overview_text: string
   wsi_path?: string
-  /** B5：`scan_overview` **首次返回给模型的完整文本**（含 `(真实 OpenSlide)` 之类的来源前缀）。
+  /** `scan_overview` **首次返回给模型的完整文本**（含 `(真实 OpenSlide)` 之类的来源前缀）。
    *  缓存读路径原样吐回它，而不是照着上面几个字段重新拼一遍——重新拼就是第二套渲染逻辑，
-   *  两处迟早不一致，而模型看到的文本正是评测所依赖的东西。
-   *  可选：B5 之前写入的缓存条目与探针手写的字面量都没有它（缺它就退回真读，不会误命中）。 */
+   *  两处迟早不一致。 */
   result_text?: string
 }
 
@@ -287,7 +283,7 @@ export interface DescribeCacheEntry {
   confidence: number
   vlm: boolean
   raw?: string
-  /** B5：生成这条 claim 时用的 `question`（它直接进 VLM prompt，是 claim 的生成条件）。
+  /** 生成这条 claim 时用的 `question`（它直接进 VLM prompt，是 claim 的生成条件）。
    *  不存就无法在命中时判断「这条描述是否答非所问」——旧条目没有它，缺省按"同问"处理（即复用）。 */
   question?: string
 }
@@ -300,9 +296,9 @@ export interface PathAskSession {
   /** describe_patch 幂等缓存：key=patch.id（已归一化），命中则直接复用结果、不再调 VLM。 */
   describeCache?: Map<string, DescribeCacheEntry>
   /** detect_roi 的候选 ROI 缓存（key=已解析 slide_id）。inspect_region 用 region_ref 从这里确定性取坐标，
-   *  勿让 LLM 手抄 x/y/w/h/magnification 六字段——那是采错区(09523/20091)的根因。 */
+   *  勿让 LLM 手抄 x/y/w/h/magnification 六字段。 */
   roiCache?: Map<string, Region[]>
-  /** 会话级性能/成本指标（Phase 6.3，runner 工具事件 + streamFn usage 写入） */
+  /** 会话级性能/成本指标（runner 工具事件 + streamFn usage 写入） */
   metrics: SessionMetrics
   capabilityRegistry: Map<string, Capability>
   clinicalData: Record<string, Record<string, string>>
@@ -316,18 +312,17 @@ export interface PathAskSession {
   currentAnalysis?: Analysis
   /** 当前病例的阅片问题（决策层/反事实需要病例上下文；runQuestion 写入） */
   currentQuestion?: string
-  /** 工具失败账本（2026-09-10）：makeTool 的 catch 与 softError 逐条追加。
-   *  此前 `isError` 只有框架设、没有任何消费者 → 失败了也无从统计；账本 + metrics.toolFail + 评测行字段补齐这条链路。 */
+  /** 工具失败账本：makeTool 的 catch 与 softError 逐条追加。 */
   toolErrors: ToolErrorRecord[]
-  /** 瞬时故障重试预算（Step 2，2026-09-11）：病例级令牌桶，只被「超时/连不上」类失败消耗
-   *  （语义类错误如 PATCH_NOT_FOUND **刻意不设上界**，见 TRANSIENT_CODES 的注释）。懒初始化。 */
+  /** 瞬时故障重试预算：病例级令牌桶，只被「超时/连不上」类失败消耗
+   *  （语义类错误如 PATCH_NOT_FOUND **不设上界**，见 TRANSIENT_CODES 的注释）。懒初始化。 */
   retryBudget?: RetryBudget
-  /** 循环治理台账（B1，2026-09-11）：逐调用的指纹/重复序/证据增量。懒初始化——
+  /** 循环治理台账：逐调用的指纹/重复序/证据增量。懒初始化——
    *  钩子挂在 Agent 上而 Agent 在 runQuestion 之外构造，故不能放 runQuestion 闭包。 */
   loopLedger?: LoopLedger
 }
 
-/** 瞬时故障令牌桶状态。`spent` 是观测值（评测行可见），`remaining` 是给模型看的数。 */
+/** 瞬时故障令牌桶状态。`spent` 是观测值，`remaining` 是给模型看的数。 */
 export interface RetryBudget {
   remaining: number
   spent: number

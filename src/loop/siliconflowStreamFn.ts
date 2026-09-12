@@ -1,5 +1,5 @@
 /**
- * SiliconFlow 决策者 StreamFn（Phase 3 前置：真实 LLM 决策者，替换 mock 脚本状态机）
+ * SiliconFlow 决策者 StreamFn
  *
  * 把 Pi-Agent Context（User/Assistant/ToolResult 消息 + 工具定义）翻译成 SiliconFlow
  * chat/completions 请求（OpenAI 兼容），流式解析 SSE，回放为 Pi AssistantMessageEvent。
@@ -43,9 +43,6 @@ import {
 // ============ 端点解析（默认硅基流动；env 可切本地 vLLM） ============
 // ⚠️ 这里在**模块作用域**读 process.env 是安全的：本文件第 18 行 `import 'dotenv/config'`
 //    在 const 求值之前已执行。若日后把 dotenv 挪走，下面两行会静默读不到 .env。
-// ⚠️ 用 PATHASK_ 前缀而不是 SILICONFLOW_ 有实测理由：`run_pare_full.sh:81` 的 env 快照
-//    grep 的是 `^(VLLM_|PATHASK_)`，**SILICONFLOW_\* 不进快照**——端点走 PATHASK_LLM_BASE_URL
-//    才能自动进快照，让日后任何一次全量都能回答「这轮打的是哪台」。
 export const LLM_BASE_URL = (process.env.PATHASK_LLM_BASE_URL ?? DEFAULT_LLM_BASE_URL).replace(/\/+$/, '')
 
 // ============ Model 对象（free tier：¥0/M tokens） ============
@@ -54,8 +51,7 @@ export const QWEN3_8B: Model<'openai-completions'> = {
   name: `Qwen3-8B (${endpointLabel(LLM_BASE_URL)})`,
   api: 'openai-completions',
   // ⚠️ 已知名不副实（本地端点时仍报 'siliconflow'）：它是 pi-ai 的 Model 身份字段，会被回放进
-  //    AssistantMessage（:83）。改名不影响本次本地化且会动到已落盘的字段语义，故**有意保持**。
-  //    真正的端点身份看 baseUrl / LLM_BASE_URL。
+  //    AssistantMessage。真正的端点身份看 baseUrl / LLM_BASE_URL。
   provider: 'siliconflow',
   baseUrl: LLM_BASE_URL,
   reasoning: true,
@@ -66,7 +62,7 @@ export const QWEN3_8B: Model<'openai-completions'> = {
   compat: { supportsStrictMode: false, thinkingFormat: 'qwen' },
 }
 
-// ============ 事件流（同 mock：done/error 判定完成） ============
+// ============ 事件流（done/error 判定完成） ============
 class SiliconFlowStream extends EventStream<AssistantMessageEvent, AssistantMessage> {
   constructor() {
     super(
@@ -191,7 +187,7 @@ function toChatTools(tools: Tool[]): { type: 'function'; function: { name: strin
 export const siliconflowStreamFn: StreamFn = (model, context, options) => {
   const stream = new SiliconFlowStream()
   // 端点相关三项（key / 代理 / 思考字段）统一走 util/llmEndpoint，与决策路径
-  // （analyzeEvidence.ts:callDecisionLlm）共用同一份判定——此前两处各写一份、都写死硅基。
+  // （analyzeEvidence.ts:callDecisionLlm）共用同一份判定。
   const baseUrl = model.baseUrl || LLM_BASE_URL
   const label = endpointLabel(baseUrl)
   const apiKey = options?.apiKey ?? llmApiKey(baseUrl)
@@ -200,8 +196,8 @@ export const siliconflowStreamFn: StreamFn = (model, context, options) => {
   //    否则指向内网自建端点会被强行经 SILICONFLOW_PROXY 转发而连不通。
   const proxyAgent = llmProxyAgent(baseUrl)
   const debug = process.env.PATHASK_DEBUG === '1'
-  // 默认关 thinking：实测开 thinking 每轮 20-50s（8 轮决策链 5+ 分钟）；关掉后 0.5-6s，决策质量不打折。
-  // 决策协议的自省/元认知靠 prompt 引导，不依赖模型 thinking 模式。QWEN_THINKING=1 可显式开启。
+  // 默认关 thinking：决策协议的自省/元认知靠 prompt 引导，不依赖模型 thinking 模式。
+  // QWEN_THINKING=1 可显式开启。
   const enableThinking = process.env.QWEN_THINKING === '1' && model.reasoning
   const tStart = Date.now()
   const dbg = (...args: unknown[]) => {
@@ -210,8 +206,8 @@ export const siliconflowStreamFn: StreamFn = (model, context, options) => {
 
   void (async () => {
     try {
-      // ⚠️ 文案同时含 SILICONFLOW_API_KEY 字面量：toolErrors.ts:294 guessPhase 与
-      //    :338 LLM_MISSING_KEY 都按它匹配，改措辞会静默错分类（probe_tool_errors.ts 有断言守）。
+      // ⚠️ 文案同时含 SILICONFLOW_API_KEY 字面量：guessPhase 与
+      //    LLM_MISSING_KEY 都按它匹配，改措辞会静默错分类。
       if (!apiKey) throw new Error('缺少 SILICONFLOW_API_KEY（.env 或 PATHASK_LLM_API_KEY）')
       if (!context.messages.length) throw new Error('context.messages 为空')
 
@@ -226,15 +222,15 @@ export const siliconflowStreamFn: StreamFn = (model, context, options) => {
         stream_options: { include_usage: true },
         max_tokens: model.maxTokens ?? 4096,
         // 编排器(agent 循环)采样温度：0.3——比 provider 默认(≈0.7)低得多(压 agent 路径方差、提升可复现)，
-        // 又高于 0(agent 长循环在 temp0 易退化为重复/死循环)。env PATHASK_EXEC_TEMP 可覆盖做 A/B。
+        // 又高于 0(agent 长循环在 temp0 易退化为重复/死循环)。env PATHASK_EXEC_TEMP 可覆盖。
         temperature: Number(process.env.PATHASK_EXEC_TEMP ?? '0.3'),
       }
       if (tools) body.tools = tools
       // thinking 开关的**请求体形态随端点而异**（详见 util/llmEndpoint.thinkingFields）：
       //  · 硅基流动：认顶层 `enable_thinking`（私有扩展），且须显式双向传——不传关不掉。
       //  · vLLM：顶层是**彻底的空操作**（OpenAIBaseModel extra="allow" → 不报 400，但掏不到），
-      //    唯一被转给 Jinja 模板的是 `chat_template_kwargs`。实测顶层 ≡ 什么都不传（1079tok/40s），
-      //    kwargs 才是真关（478tok/18s）。用错形态不报错、只静默慢一倍多且行为与硅基基线发散。
+      //    唯一被转给 Jinja 模板的是 `chat_template_kwargs`。实测顶层 ≡ 什么都不传，
+      //    kwargs 才是真关。用错形态不报错、只静默慢一倍多且行为与硅基基线发散。
       Object.assign(body, thinkingFields(baseUrl, enableThinking))
 
       dbg(`请求发出: messages=${messages.length} tools=${tools?.length ?? 0} thinking=${enableThinking} 最后role=${messages[messages.length - 1]?.role}`)
@@ -251,7 +247,7 @@ export const siliconflowStreamFn: StreamFn = (model, context, options) => {
       })
       if (!res.ok) {
         const errText = await res.text().catch(() => '')
-        // label：硅基端点仍逐字是 'SiliconFlow'（toolErrors.ts:294 靠它判 phase=llm）；
+        // label：硅基端点仍逐字是 'SiliconFlow'（靠它判 phase=llm）；
         // 本地端点得 '本地 LLM'——该词表已同步扩过，别再改回去。
         throw new Error(`${label} HTTP ${res.status}: ${errText.slice(0, 300)}`)
       }

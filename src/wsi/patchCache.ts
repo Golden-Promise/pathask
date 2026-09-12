@@ -11,10 +11,9 @@ const DATA_DIR = fileURLToPath(new URL('../../data/', import.meta.url))
 export const PATCH_CACHE_ROOT = path.join(DATA_DIR, '.cache', 'patch')
 
 /** 把 patch 真读出来写盘，供 describe_patch（VLM）消费；返回缓存相对路径。
- *  Phase 6.2 幂等：目标文件已存在则跳过真读 WSI（重复 inspect 同一 region 直接命中），
+ *  幂等：目标文件已存在则跳过真读 WSI（重复 inspect 同一 region 直接命中），
  *  命中率对重复阅片/多轮评测是直接收益（同一 slide 二次 read 免全分辨率读盘）。
- *  A3（2026-09-10）：扇出**有界**（此前是无界 `Promise.all`——一次 inspect 几十个 patch 就并发几十路
- *  全分辨率读盘，正是「跑一半挂了/占满内存」的来源之一）+ 逐路透传 signal（agent 中止能掐断读图）。 */
+ *  扇出**有界** + 逐路透传 signal（agent 中止能掐断读图）。 */
 export async function cachePatches(
   client: WsiClient,
   slideId: string,

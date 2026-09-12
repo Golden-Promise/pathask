@@ -2,10 +2,10 @@ import type { Region } from '../types'
 import type { WsiCell } from './wsiTypes'
 
 export interface BaselineOpts {
-  /** 候选区数量（默认 5，env PATHASK_ROI_BASELINE_K 覆盖；perceive/canary 可调大覆盖更大票面）。 */
+  /** 候选区数量（默认 5，env PATHASK_ROI_BASELINE_K 覆盖；perceive 可调大覆盖更大票面）。 */
   k: number
   /** 采样打分模式：tissue（裸组织密度=旧行为回退）| nuclear（核密度）| blend（默认 0.6*nuclear+0.4*tissue）。
-   *  不传时读 env PATHASK_ROI_SCORE（默认 blend）。Phase 0 已证 tissue_fraction 偏良性结缔组织（纤维/平滑肌/
+   *  不传时读 env PATHASK_ROI_SCORE（默认 blend）。tissue_fraction 偏良性结缔组织（纤维/平滑肌/
    *  空白算"组织"、核密癌灶反排名低）→ nuclear 权重更高把采样引向核密癌灶。 */
   score?: 'tissue' | 'nuclear' | 'blend'
 }

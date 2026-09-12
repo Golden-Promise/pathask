@@ -31,7 +31,7 @@ ROOT = Path(__file__).resolve().parent.parent  # path-ask/
 REGISTRY_PATH = Path(os.environ.get("PATHASK_WSI_REGISTRY", ROOT / "data" / "wsilist.json"))
 HOST = os.environ.get("PATHASK_BRIDGE_HOST", "127.0.0.1")
 PORT = int(os.environ.get("PATHASK_BRIDGE_PORT", "8787"))
-MASK_DIR = Path(os.environ.get("PATHASK_BRIDGE_MASK_DIR", str(REGISTRY_PATH.parent / "masks")))  # 掩膜落盘（Phase 6.5 持久化）；temp-bridge 用独立目录避免污染 prod 共享 cache 的分辨率约定
+MASK_DIR = Path(os.environ.get("PATHASK_BRIDGE_MASK_DIR", str(REGISTRY_PATH.parent / "masks")))  # 掩膜落盘
 
 app = FastAPI(title="PathAsk WSI bridge")
 
@@ -39,9 +39,9 @@ _registry: dict[str, dict] = {}
 _slides: dict[str, openslide.OpenSlide] = {}
 _locks: dict[str, threading.Lock] = {}
 
-# 组织掩膜缓存（Phase 6.1）：key=(slide_id, max_dim, sat_threshold)。tissue_mask/scan_overview 每次
-# 都重算 2048×2048 饱和度阈值掩膜（读全图），对 18 例评测 × 多轮是重复热点 → 首次计算后 O(1) 命中。
-# 单例掩膜 ~2048×2048 bool ≈ 4MB，评测集规模缓存可接受；用 lock 保 double-check 原子性。
+# 组织掩膜缓存：key=(slide_id, max_dim, sat_threshold)。tissue_mask/scan_overview 每次
+# 都重算 2048×2048 饱和度阈值掩膜（读全图）→ 首次计算后 O(1) 命中。
+# 单例掩膜 ~2048×2048 bool ≈ 4MB；用 lock 保 double-check 原子性。
 # 缓存值升级为 (mask, nuclear) 元组：nuclear=核密度布尔掩膜（深紫核），供 sampling 按核密度重排（治 tissue_fraction 偏良性间质）。
 # 磁盘兼容：旧 npz 无 nuclear 字段 → KeyError → 走重算（一次性）；新写盘含 nuclear。
 _mask_cache: dict[tuple, tuple[np.ndarray, np.ndarray, float]] = {}
@@ -101,7 +101,7 @@ def _png_b64(img: Image.Image) -> str:
     # 剔除 OpenSlide 从 tiff 读回时残留的巨型元数据（超大 ICC/私有 tag/description 等），
     # 否则会被 Pillow 写进 PNG 的 TEXT/iTXt chunk，下游 Image.open() 时超 PngImagePlugin.MAX_TEXT_CHUNK
     # 抛 "Decompressed data too large"（detect_roi conch_embed / describe_patch VLM / retrieve_similar_case
-    # 全炸 → 该 slide 降级 mock。PARE v0.2 第 5 例 REG2 tiff 即此）。清空 info 后 save 不再带任何 chunk。
+    # 全炸 → 该 slide 降级 mock）。清空 info 后 save 不再带任何 chunk。
     img = img.copy()
     img.info.clear()
     buf = io.BytesIO()
@@ -135,7 +135,7 @@ def _file_fingerprint(abs_path: str) -> tuple[float, int] | None:
 def _nuclear_mask(r: np.ndarray, g: np.ndarray, b: np.ndarray, sat: np.ndarray) -> np.ndarray:
     """核密度代理布尔：深紫/暗蓝核（hematoxylin）。核=低亮度 + 中饱和 + 偏蓝（b≥r−bias），
     排除粉红嗜酸间质（r高b低）、边缘空白（高亮度）、暗红出血（r高b低）。参数 env 可调。
-    lum 阈值抓"暗"，sat 排除灰白，b≥r 排掉嗜酸粉——正是 Phase 0 里 00001/00002 被误排的纤维间质/平滑肌的特征。"""
+    lum 阈值抓"暗"，sat 排除灰白，b≥r 排掉嗜酸粉。"""
     lum = 0.299 * r + 0.587 * g + 0.114 * b
     nuc_lum = float(os.environ.get("PATHASK_NUC_LUM", 0.55))
     nuc_sat = float(os.environ.get("PATHASK_NUC_SAT", 0.10))
@@ -152,7 +152,7 @@ def _overview_scale(slide: openslide.OpenSlide, mask_w: int) -> float:
 def _overview(slide: openslide.OpenSlide, max_dim: int) -> tuple[np.ndarray, float]:
     """≤max_dim 概览 (RGB uint8) + 概览→原生缩放因子。
     ⚠️ 单层 slide (level_count=1) 无 ≤max_dim 层级，_pick_level 落 level-0=原生巨图，read_region 会整读
-    native 像素（00003/00004=4.9GP、00005=3.37GP）>150GB RSS 近 OOM/极慢。get_thumbnail 对任何 slide
+    native 像素。get_thumbnail 对任何 slide
     给 ≤max_dim 概览（经 OpenSlide 最优层级+缩放），mean-fraction 对分辨率稳定，仅采样/校准用。"""
     native_w = slide.level_dimensions[0][0]
     img = np.array(slide.get_thumbnail((max_dim, max_dim)).convert("RGB"))
@@ -191,7 +191,7 @@ def _tissue_mask_array(slide_id: str, slide: openslide.OpenSlide, max_dim: int, 
     lvl = _pick_level(slide, max_dim)
     lvl_w, _lvl_h = slide.level_dimensions[lvl]
     if lvl_w <= max_dim:
-        # 多级 slide 标准路径：读真·金字塔层级（≤max_dim 宽）——分辨率/scale 与旧行为完全一致，行为不变。
+        # 多级 slide 标准路径：读真·金字塔层级（≤max_dim 宽）。
         with _locks[slide_id]:
             rgb = np.array(slide.read_region((0, 0), lvl, (lvl_w, _lvl_h)).convert("RGB"))
         scale = _overview_scale(slide, lvl_w)
@@ -407,8 +407,7 @@ def mil_infer(req: MilReq):
 def _warmup_models() -> None:
     """启动后台预热 CONCH（detect_roi 检索首选编码器，首次懒加载 ~25s）。
 
-    §五 冷启动修复：detect_roi 的 P95=35s 主要来自 CONCH 首次懒加载（模型加载时间
-    被计进单次阅片成本、且演示首次要等 35s）。启动即预热 → 首次 detect_roi 无加载开销。
+    启动即预热 → 首次 detect_roi 无加载开销。
     run_mil 的 CONCH-224 在 CPU worker 进程内（独立 fork，无法从此预热），由特征缓存覆盖。
     预热失败不阻塞启动（请求侧仍走懒加载）。
     """
