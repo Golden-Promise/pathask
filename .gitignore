@@ -1,0 +1,31 @@
+# 依赖
+node_modules/
+# 注意：pi-agent/ **不能**写进这里 —— 它是 git submodule，gitlink 必须被跟踪。
+# submodule 的内容由 submodule 自身管理，不会混进本仓库。
+
+# Python
+__pycache__/
+*.pyc
+
+# 环境与密钥 —— 绝不提交
+.env
+.env.local
+*.key
+
+# 数据与产物（本仓库只发代码，不发数据）
+# ⚠️ 必须根锚定（前导 /）：写成 `data/` 会连 `src/data/` 一起忽略——
+#    那里面是 agent 自己的诊断谱词表，属于要发布的源码。
+/data/
+/models/
+/log/
+*.log
+
+# 评测产物
+/results/
+*.out
+*.err
+
+# 编辑器 / 系统
+.DS_Store
+.idea/
+.vscode/
