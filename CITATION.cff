@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "PathAsk: a conversational whole-slide-image pathology agent with a traceable evidence chain"
+abstract: >-
+  PathAsk is a research-grade conversational agent for whole-slide-image (WSI)
+  pathology. Given a slide and a question, it scans at low magnification, selects
+  and zooms into regions, has a pathology vision-language model describe what it
+  sees, pulls clinical and knowledge context, and returns a structured report in
+  which every conclusion points back to region coordinates, magnification and
+  morphological description. It is a reference implementation, not a medical
+  device, and distributes no model weights or data.
+type: software
+license: MIT
+version: 0.1.0
+date-released: 2026-09-12
+repository-code: "https://github.com/Golden-Promise/pathask"
+url: "https://github.com/Golden-Promise/pathask"
+keywords:
+  - computational-pathology
+  - whole-slide-image
+  - pathology
+  - llm-agent
+  - agentic-ai
+  - medical-ai
+  - vision-language-model
+  - openslide
+authors:
+  # 署名与 LICENSE 的版权持有人一致；不编造真实姓名 / 单位 / ORCID。
+  - name: "Golden-Promise"

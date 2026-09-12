@@ -16,14 +16,40 @@ python wsi-bridge/server.py
 
 ## 接口
 
+### 切片读取（GET）
+
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/health` | 存活 + 已登记 slide 数 |
 | GET | `/slides` | 列出登记 slide |
 | GET | `/slides/{id}/info` | 尺寸 / 层数 / downsamples / objective |
 | GET | `/slides/{id}/thumbnail?max_dim=1024` | 缩略图 PNG（base64） |
-| GET | `/slides/{id}/tissue-mask?max_dim=2048` | 组织掩膜：覆盖率 + bbox + 粗网格候选细胞 |
+| GET | `/slides/{id}/tissue-mask?max_dim=2048` | 组织掩膜：覆盖率 + bbox + 粗网格候选细胞（每格带 `tissue_fraction` / `nuclear_fraction`） |
 | GET | `/slides/{id}/region?x&y&w&h&level` | 指定层级真读一块 → PNG（base64） |
+
+`{id}` 会先经 `_resolve` 归一化：精确命中登记表 → 去扩展名回退 → basename 回退
+（TS 端 `WsiClient` 会剥掉目录前缀再进 URL，否则 `/` 会让路径参数被截断）。
+
+### 向量编码（POST）
+
+请求体统一为 `EmbedReq`：`{"images": ["本地路径或 data-uri"], "texts": ["..."]}`，
+两者都可省略；返回 `image_vectors` / `text_vectors`。**首次调用懒加载权重**（CONCH ~25s，PLIP ~20s），之后的调用才快。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/embed` | **PLIP** 双塔编码 → 归一化向量（图/文） |
+| POST | `/conch-embed` | **CONCH** 病理专用双塔编码 → 归一化向量（图/文）。检索首选 |
+| POST | `/conch-embed-raw` | CONCH **未归一化**特征（`ln_contrast` 池化），MIL 特征协议用 |
+| POST | `/mil` | `{"slide_id","capability_id","max_patches"?}`：在线抽特征 → RRTMIL 权重 → slide 级预测（需 `data/capability_registry.json` 与 `PATHASK_STREAM_ROOT`） |
+
+> ⚠️ **`/conch-embed-raw` 与 `/mil` 服务的是 `run_mil` 专病分类器，而该工具当前不在 agent 的工具集里**
+> （`src/tools/index.ts` 的 `createTools` 不注册它，源码 `src/tools/runMil.ts` 保留但无调用方）。
+> 桥侧路由与 `mil_inference.py` 都保留着，但 `/mil` 还依赖两样**不在本仓库**的东西：
+> `data/capability_registry.json`（`/data/` 已 gitignore）与 STREAM 权重（`PATHASK_STREAM_ROOT`）。
+> 克隆本仓库后这两条路由**不可用**。
+
+> 权重路径全部走环境变量，为空时懒加载会抛清晰错误：`CONCH_WEIGHTS`（`/conch-embed`、`/conch-embed-raw`、`/mil`）、
+> `PLIP_PATH`（`/embed`）。也就是说**不配权重时，只有 GET 那六条切片读取路由可用**。
 
 ## TS 客户端
 

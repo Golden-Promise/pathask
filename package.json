@@ -3,7 +3,10 @@
   "private": false,
   "version": "0.1.0",
   "type": "module",
-  "description": "PathAsk —— 对话式全片病理阅片 agent（基于 pi-agent 的病理领域裁剪）",
+  "description": "基于 pi-agent 的对话式全片病理（WSI）阅片 agent：输出带证据链（结论 → 区域坐标 → 倍率 → 形态）的研究级分析报告",
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "scripts": {
     "dev": "tsx src/main.ts",
     "bridge": "python wsi-bridge/server.py",

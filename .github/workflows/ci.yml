@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# 同一分支的旧跑批直接取消，省额度
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        # 不拉 submodule：`src/` 里零处 import `pi-agent/` 下的路径，
+        # 构建吃的是 npm 上的 @earendil-works/* 发布包。submodule 只是署名锚点。
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.19.0'   # 下限来自 undici 声明的 engines，见 package.json
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Offline end-to-end smoke
+        # src/main.ts 是离线脚本化入口：工具、证据库、投票、报告都真的跑，
+        # 只有模型决策与数据是桩。不联网、不写盘（不传 session，故不落报告），
+        # 因此可以放心在 CI 里跑——它卡的是「接线与工具编排有没有断」。
+        run: npm run dev
