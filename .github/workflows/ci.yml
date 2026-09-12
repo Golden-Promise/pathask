@@ -15,11 +15,11 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         # 不拉 submodule：`src/` 里零处 import `pi-agent/` 下的路径，
         # 构建吃的是 npm 上的 @earendil-works/* 发布包。submodule 只是署名锚点。
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22.19.0'   # 下限来自 undici 声明的 engines，见 package.json
           cache: npm
