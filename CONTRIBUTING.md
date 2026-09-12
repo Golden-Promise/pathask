@@ -62,7 +62,7 @@ curl --noproxy '*' http://127.0.0.1:8787/health
 git tag -a v0.1.1 -m "v0.1.1"
 git push origin v0.1.1
 # 4. 建 Release，正文用 CHANGELOG 里对应的那段
-gh release create v0.1.1 --title "v0.1.1" --notes-from-tag
+gh release create v0.1.1 --title "v0.1.1" --notes-file <把 CHANGELOG 对应段落存成的文件>
 ```
 
 ## 许可证
