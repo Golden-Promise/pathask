@@ -47,7 +47,7 @@ export function createSession(slideId = 'slide_brca_001'): PathAskSession {
   }
 }
 
-/** 真实会话：读 data/wsilist.json 注册表 + 连 WSI 桥接。无真实 WSI 时抛错提示先转数据。 */
+/** 真实会话：读 WSI 登记表（PATHASK_WSI_REGISTRY，默认 <仓库根>/data/wsilist.json）+ 连 WSI 桥接。登记表为空时抛错。 */
 export function createRealSession(slideId?: string): PathAskSession {
   const registry = loadWsiRegistry()
   if (registry.size === 0) throw new Error('WSI 登记表未登记任何可用切片（检查 PATHASK_WSI_REGISTRY 指向的 JSON，格式见 wsi-bridge/README.md）')
