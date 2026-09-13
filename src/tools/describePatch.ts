@@ -9,6 +9,7 @@ import { anchorConf, clampConfidence } from './anchors'
 import { mapWithConcurrency } from '../util/concurrency'
 import { resilient } from '../util/resilience'
 import { softError } from './toolErrors'
+import { isDegenerateOutput } from './degeneracy'
 
 const PROJECT_ROOT = fileURLToPath(new URL('../../', import.meta.url))
 
@@ -29,6 +30,15 @@ function describeCacheByQuestion(): boolean {
   const raw = process.env.PATHASK_DESCRIBE_CACHE_BY_QUESTION
   if (raw === undefined || raw.trim() === '') return false
   return /^(1|true|on|yes)$/i.test(raw.trim())
+}
+
+/** claim 质量门（空 claim / 退化重复串不得入库投票）。默认**开**；`0|false|off|no` 关。
+ *  关掉是给 A/B 用的：它恢复「VLM 说什么都照单全收」的旧行为，用于量化这道门值多少分。
+ *  解析遵循仓内既有约定（缺省/空 = 开，只有显式的假值才关）。 */
+function claimQualityGate(): boolean {
+  const raw = process.env.PATHASK_CLAIM_QUALITY_GATE
+  if (raw === undefined || raw.trim() === '') return true
+  return !/^(0|false|off|no)$/i.test(raw.trim())
 }
 
 /** describe 幂等缓存的键。**读写必须走同一个函数**——get/set 各写一遍 key 表达式，
@@ -104,7 +114,43 @@ export const BAD_CLAIM_SENTENCE: RegExp[] = [
   // 提示词首行回显：VLM 偶把送进 prompt 的 specimenHint 原样回显进正文（既非形态描述也非诊断/弱化句，纯噪声），剥除。
   // 实测见 "这是HE染色的组织学切片。" 独立成句；中文句号由 sanitizeClaim 的切分规则一并处理。
   /^(这是\s*HE\s*染色|注意：这是甲状腺|这是\s*HE\s*染色\s*的)/i,
+
+  // ── 中文触发词 ──
+  // 此前各类里只有上面那一条回显规则管中文，其余全是英文——英文 body 命中而中文 body 全部放行。
+  // 实测影响面：Patho-R1 的输出以英文为绝对多数，中文 body 极少且多为退化重复串或提示词回显，
+  // 所以这条补丁的收益**不是**「救回中文 claim 的判读质量」，而是：
+  //   ① 对称性 / 可移植性：描述器由 `VLLM_MODEL` 决定（在册含 Qwen3-VL），换模型就可能整段输出中文，
+  //      届时词表缺失是**静默**失效（清洗照跑、什么都不剔），比误伤更难发现；
+  //   ② 它是上面那条回显规则的下游——回显句被剔空后留下的空 claim，由 `describeOne` 的质量门兜底。
+  //
+  // 词表只收**断言 / 建议 / 推测框架**，**刻意不收疾病名词**。理由是对齐英文侧的既有原则
+  // 「宁可句读漏、不误伤纯形态句」：英文之所以能用 `malignant neoplasm` 而不误伤
+  // `No definitive malignant features`，是因为它匹配的是复合词而非裸词；中文若收「癌」「恶性」
+  // 这类裸词，`未见明确恶性特征` 这种否定式形态句会被整句误杀——那正是最该留住的句子。
+  // 下面每一条都要求句子里出现「对病变下结论 / 给建议 / 表推测」的**框架词**，纯镜下所见的句子不含这些词。
+  /^(综合|综上|总体而言|因此|所以|据此)/,
+  /(符合|考虑|倾向于|倾向为|提示|支持|诊断为|诊断：|疑似|可能为|不除外|待排|鉴别诊断)/,
+  /(免疫组化|免疫组织化学|IHC)/,
+  /(建议|必要时|需(?:要)?(?:进|做|加|结合)|应(?:当)?(?:进|做|加|结合))/,
+  /(无法|不能|难以)(?:确定|判断|明确|鉴别|区分|排除)/,
 ]
+
+/** 显式结论标签句——**豁免全部过滤规则**。
+ *
+ *  为什么必需：`verify_region` 的 prompt **契约性要求**回复以「形态判定：支持 / 不支持 / 无法判断」开头，
+ *  那是工具的结论载体，不是 VLM 自己补的尾巴句。而中文触发词表里的 `支持`/`无法判断` 会把**整句**剔掉——
+ *  可这一句里**同时带着形态理由**（`形态判定：支持浸润性生长，间质见异型细胞巢。`）。整句一丢：
+ *  `verify_region` 随即 `!hasMorphContent(claim)` 成立 → 判「该视野无形态学证据」→ **整个证据节点出局**。
+ *  即「按契约必须写的那个词，恰好触发清洗，把写它的那句话连同证据一起删掉」。
+ *
+ *  为什么安全：豁免面很窄——要求标签出现在**句首**，且限定在这几个既有词（与 `extractVerdict` /
+ *  `stripVerdictLead` 认识的那组一致）。结论本身另有两道独立处理：`extractVerdict` 从**完整原文**提前提取
+ *  （早于本函数），`stripVerdictLead` 事后剥掉标签前缀——所以保留此句**不会**让结论绕开它们。
+ *
+ *  ⚠️ 已知边界：**不带标签**的混合句（`所见符合浸润，间质见异型细胞巢。`）仍会被整句剔掉——中英文两侧
+ *  都一样（英文 `…consistent with invasion, with atypical nests…` 同判）。这是「宁可误剔、不误伤纯形态句」
+ *  原则下的既有代价，不是本豁免引入的；真正的修法是句级否定/混合感知，属描述器语义层的独立议题。 */
+const VERDICT_LABEL = /^\s*[（(【\[]?\s*(?:\*{1,3}\s*)?(?:形态判定|结论|判断|复核结果|判读|印象)\s*[:：]/
 
 /** 按句拆 body，滤掉命中的"非形态"句，重拼 + 压缩多余空白。
  *
@@ -116,7 +162,7 @@ export function sanitizeClaim(body: string): string {
     .split(/(?<=[.!?])\s+|\n+|(?<=[。！？])\s*/)
     .map((s) => s.trim())
     .filter(Boolean)
-  const kept = sentences.filter((s) => !BAD_CLAIM_SENTENCE.some((re) => re.test(s)))
+  const kept = sentences.filter((s) => VERDICT_LABEL.test(s) || !BAD_CLAIM_SENTENCE.some((re) => re.test(s)))
   return kept.join(' ').replace(/\s{2,}/g, ' ').trim()
 }
 
@@ -481,6 +527,38 @@ async function describeOne(ctx: ToolExecuteCtx, patch: PatchRef, question: strin
     morphConf = fb.confidence
     console.warn(`[describe_patch] ${MODEL_LABEL} 不可用，降级模板：${(err as Error).message}`)
   }
+  // ── claim 质量门（`PATHASK_CLAIM_QUALITY_GATE=0` 关）──
+  // VLM 通路（vlm=true）有两条「说了等于没说」的输出，此前**都照常入库、照常投票、照常算进展**：
+  //   ① 空 claim：sanitizeClaim 把整段剔光。成因是 VLM 把 specimenHint 原样回显
+  //      （`这是HE染色的组织学切片。`），被中文回显规则剔空。
+  //   ② 退化重复串：贪心解码钩进循环后吐 `不等样不等样×62` / `3-4 重要举措×58` 这类词元循环。
+  //      量产实测里这一类**全部来自 describe_patch**，而这条路此前**没有任何退化检测**
+  //      （verify_region 有，但其旧判据只认 step 骨架签名）。
+  //
+  // 为什么必须出局而不是原样留着：投票引擎对 observation 按 claim 文本打方向票
+  // （`common.ts` 的 `isVoteEvidence` / `evidenceConfidence`），一段「什么都没有」的观察进池子，
+  // 至少贡献一次计数与一次置信聚合；而 `countsAsProgress` 还会把它算成「有进展」→ 抑制 stall 检测。
+  // 即：**证据越空，agent 越觉得自己读到了东西**。这与降级模板的 stub 是同一条安全属性，只是入口不同。
+  //
+  // 处置沿用 verify_region 的既有约定：**标记 + 换文 + 出局**（不静默丢弃，保留可追溯性）。
+  // 质量门只作用于真 VLM 输出；降级模板另有 stub 路径，两者不重叠。
+  //
+  // 判的是 `claim`（= `sanitizeClaim` 之后的文本），**不是 `rawClaim`**——这是刻意的：
+  // 要拦的是「这段字会不会污染投票」，而进投票的正是 `claim`。判 raw 会把 sanitize 已经剔干净的
+  // 输出再拦一次（白拦），也会与退化检测的存量回放口径分叉（那次回放读的也是落盘 claim）。
+  //
+  // ⚠️ 位置很关键：必须在**写幂等缓存之前**。放在后面会让退化 claim 进缓存，
+  //    此后每次复用都原样吐回垃圾，而 `degenerate` 标记只在首次那一次存在。
+  const degenerateVlm = vlm && isDegenerateOutput(claim)
+  const emptyClaim = vlm && claim.trim() === ''
+  const claimInvalid = claimQualityGate() && (degenerateVlm || emptyClaim)
+  if (claimInvalid) {
+    console.warn(`[describe_patch] ${MODEL_LABEL} ${degenerateVlm ? '输出退化（重复循环）' : '返回空 claim（整段被清洗）'}，出局投票: ${patch.id}`)
+    claim = degenerateVlm
+      ? `（${MODEL_LABEL} 对该视野输出退化（重复循环、无形态内容），未能形成有效观察；如需该区域证据请换 patch 或提高倍率重读。）`
+      : `（${MODEL_LABEL} 对该视野未产出形态描述（输出被清洗为空），未能形成有效观察。）`
+  }
+
   // label 接线。on=按 label 定聚合置信 + 存 morph_label（投票引擎据此注入硬词/设极性）；
   //      off（PATHASK_LABEL_WIRE=off）只留形态文本——不存 label、置信回落 supportive 锚点。
   const confidence = vlm
@@ -506,9 +584,11 @@ async function describeOne(ctx: ToolExecuteCtx, patch: PatchRef, question: strin
     // 完整原始 VLM 输出（含 think/answer 标签）存 source.raw，JSON 报告可追溯
     ...(vlm ? { raw: rawClaim } : {}),
     ...(vlm ? {} : { fallback: true, ...(degradedReal ? { stub: true } : {}) }),
+    // 质量门出局：与 verify_region 同一枚标记——isVoteEvidence / countsAsProgress / evidenceConfidence 三处都认它
+    ...(claimInvalid ? { degenerate: true } : {}),
   })
   return {
-    text: `[describe_patch] ${patch.id}（${patch.magnification}×，问题: ${question}）\n${claim}\n（标签=${morphLabel}, conf=${confidence}${vlm ? '' : '，⚠️ vLLM 不可用降级'}）`,
+    text: `[describe_patch] ${patch.id}（${patch.magnification}×，问题: ${question}）\n${claim}\n（标签=${morphLabel}, conf=${confidence}${vlm ? '' : '，⚠️ vLLM 不可用降级'}${claimInvalid ? '，⚠️ 输出无效已出局投票' : ''}）`,
     details: { patch, claim, confidence, vlm, label: morphLabel },
   }
 }

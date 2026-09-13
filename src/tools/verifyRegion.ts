@@ -8,6 +8,10 @@ import { cachePatches } from '../wsi/patchCache'
 import { describeWithVLM, specimenHintFor, summarizeVlm, MODEL_LABEL, VLLM_MODEL } from './describePatch'
 import { DIAGNOSIS_SPECTRUM } from '../data/diagnosisSpectrum'
 import { resilient } from '../util/resilience'
+import { isDegenerateOutput } from './degeneracy'
+
+/** 本模块内的旧名（保持既有调用点不变）。 */
+const isDegenerateVlm = isDegenerateOutput
 
 /** 从 VLM 复核回复提取结论。
  *  ① 优先解析显式结论标签（prompt 要求「形态判定：支持/不支持/无法判断」开头，Patho-R1 可能用英文
@@ -44,21 +48,11 @@ export function extractVerdict(text: string): '支持' | '质疑' | '不确定' 
   return '不确定'
 }
 
-/** VLM 输出退化检测。病理推理 VLM（Patho-R1）对部分 verify 输入会钩进它记忆里的
- *  step-screening 脚手架并进入重复循环——只吐 "<think>**Step 1: Screening**…**Step N: Extended Report
- *  Output**</think>" 空骨架（撞 max_tokens 上限停）。这类输出无任何形态信息，不得当证据。保守判定只针对该骨架签名；若文本含真实形态学词
- *  （nuclei/cell/gland/atypia/invasion 等）则判非退化（放行正常 step 化读图）。 */
-export function isDegenerateVlm(text: string): boolean {
-  if (!text) return false
-  // ① 强签名：重复 "Extended Report Output"（退化循环的独特后缀）
-  if ((text.match(/Extended Report Output/g) ?? []).length >= 3) return true
-  // ② 弱签名：出现大量 Step 标签且几乎不含形态学/诊断内容（纯骨架）
-  const steps = (text.match(/\*\*Step \d+[^\n]*?\*\*/g) ?? []).length
-  if (steps >= 8 && !/nuclei|cell|gland|stroma|atypia|invasi|malign|adeno|reactive|benign|necro|mitos|epithel|cytoplasm|hyperchrom|polarity|desmoplas/i.test(text)) {
-    return true
-  }
-  return false
-}
+/** VLM 输出退化检测。判据已抽到 `tools/degeneracy.ts`（`describe_patch` 与 `verify_region` 共用一份），
+ *  此处保留函数名以维持既有调用点不变。
+ *  新版 = 旧骨架签名（原样保留）∪ 词元重复循环——贪心解码钩进循环后吐出的重复串，
+ *  而 VLM 描述那条路（`describe_patch`）此前**完全没有检测**。 */
+export { isDegenerateOutput as isDegenerateVlm } from './degeneracy'
 
 /** 形态学 token 复用（与 isDegenerateVlm 的判定词一致）：用于"剥后剩余必须是有形态内容的正文"防误杀。
  *   VLM 若以诊断名开头（Fibroma. 等），剥掉后剩下的是形态正文；若正文无任何形态词（纯结论/纯空壳），
