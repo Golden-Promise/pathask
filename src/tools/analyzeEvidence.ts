@@ -981,11 +981,17 @@ export const analyzeEvidenceSpec: ToolSpec<typeof AnalyzeEvidenceSchema> = {
     //  代码层未强制）。此处 morphAgainst 仅用于下方 evidence_conflict / 保守处理信号，不横向改写 llm 置信。
     const morphAgainst = voteObs.some((n) => n.source.tool === 'describe_patch' && n.polarity === 'against')
 
+    // ⚠️ 实际拍板者 ≠ 配置档位。LLM 档下端点失败/超时会**回落规则投票**，而 `DECISION_MODE` 是模块常量，
+    // 那一刻仍读作 'llm'——此前正文与工具回执都按它落笔，于是回落的病例在报告里写着「（LLM 决策）」，
+    // 而 LLM 根本没应声。这正是本项目反复吃亏的「看起来跑完」形态的帮凶：端点 404 / 决策超时被静默
+    // 掩盖成一次正常诊断。判据改用 `useRuleConfidence`——唯一跟着**实际路径**翻转的局部量
+    //（零证据守卫另算，它两边都不是）。
+    const decidedBy = zeroVoteEvidence ? '零证据守卫' : useRuleConfidence ? '规则投票' : 'LLM 决策'
     // 综合推断（inference）节点
     // 零证据时不能写成「基于 0 条证据（LLM 决策）」——那既读不通，也谎称问过 LLM
     const inferenceClaim = zeroVoteEvidence
       ? `综合推断：${primary}（零可投票证据：库存 ${obs.length} 条节点均不可投票）`
-      : `综合推断：${primary}（基于 ${voteObs.length} 条证据${DECISION_MODE === 'llm' ? '（LLM 决策）' : '投票'}）`
+      : `综合推断：${primary}（基于 ${voteObs.length} 条证据（${decidedBy}））`
     const inference = addEvidence(ctx, 'inference', inferenceClaim, confidence, 'analyze_evidence')
     // 每条可投票观察 → 推断 的边：contradicts（反对主诊断）/ supports（支持或中性）
     for (const n of voteObs) {
@@ -1025,7 +1031,7 @@ export const analyzeEvidenceSpec: ToolSpec<typeof AnalyzeEvidenceSchema> = {
     return {
       text:
         `${morphAgainst ? `⚠️ 形态学金标准(describe_patch)与主诊断「${primary}」方向相反 → 置信压至不确定、建议 verify_region/人工复核\n` : ''}` +
-        `[analyze_evidence] 诊断=${primary} conf=${confidence.toFixed(2)}；证据 ${obs.length} 条（反对 ${againstCount}）→ 证据图 ${store.getGraph().edges.length} 条边（${DECISION_MODE === 'llm' ? 'LLM 决策' : '规则投票'}）\n` +
+        `[analyze_evidence] 诊断=${primary} conf=${confidence.toFixed(2)}；证据 ${obs.length} 条（反对 ${againstCount}）→ 证据图 ${store.getGraph().edges.length} 条边（${decidedBy}）\n` +
         (decisionNote ? `[决策依据] ${decisionNote}\n` : '') +
         `鉴别诊断 ${differential.length} 个:\n` +
         differential.map((d) => `- ${d.diagnosis}（conf=${d.confidence.toFixed(2)}，支持 ${d.evidence_for.length} / 反对 ${d.evidence_against.length}）`).join('\n') +
