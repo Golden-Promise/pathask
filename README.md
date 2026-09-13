@@ -8,9 +8,7 @@
 
 > 对话式全片病理（WSI）阅片 agent —— 对整张切片提问，输出**带证据链**的研究级分析报告。
 
-丢给 agent 一张 WSI 和一句问题，它自己决定「低倍扫 → 挑区域 → 放大 → 让病理 VLM 描述 → 拉临床/知识 → 综合判断」。产出的不是单个分类标签，而是**每个结论都能指回坐标、倍率与形态学描述**的报告，并且可以被追问。
-
-agent 骨架用 [pi-agent](https://github.com/earendil-works/pi)（`pi-ai` + `pi-agent-core`）二次开发；视觉理解接开源病理 VLM，决策接纯文本 LLM。两者都是**可替换的 OpenAI 兼容端点**，本项目不训练也不分发任何权重。
+针对通用模型病理垂域识别能力不足、垂域模型证据链编排困难的问题，基于 [Pi-Agent](https://github.com/earendil-works/pi) 开发面向病理阅片场景的多模态智能体，支持任意 WSI 的对话式提问与可溯源报告。
 
 ## 工具集（`createTools` 注册的 10 个）
 
@@ -48,7 +46,7 @@ export type EvidenceRelation = 'supports' | 'contradicts' | 'excludes' | 'refine
 
 每条证据节点都带 `source`：工具名、`coords`（`x/y/w/h` + 倍率 + 打分）、`magnification`、模型名，以及 `stub` / `degenerate` / `fallback` 等**降级标记**——被标记的观察不进投票。
 
-下面这份是 `npm run dev`（离线桩）跑出来的**真实输出**，只对长列表做了删减标注，字段未做任何改写：
+示例（长列表已删减）：
 
 ```jsonc
 {
@@ -137,29 +135,10 @@ export type EvidenceRelation = 'supports' | 'contradicts' | 'excludes' | 'refine
 
 - `differential[].evidence_for` 是**命中短语 ±12 字上下文**的摘录（`analyzeEvidence.ts` 的 `evidenceExcerpt`），
   所以看着像被截断——那是设计如此，不是丢字。它保证摘出来的每个片段都真的含形态学关键词。
-- `ev-6` 的 `source.fallback: true` 表示这条形态描述来自**降级模板**而非真实 VLM（离线桩没有 VLM 端点）。
-  这类观察**不参与投票**——否则「模型一挂、全片变温和模板」会把结论洗成良性。
+- `source.fallback: true` 表示该形态描述来自**降级模板**而非真实 VLM。这类观察**不参与投票**——
+  否则「模型一挂、全片变温和模板」会把结论洗成良性。
 - `confidence: 0.5` 配上 `uncertainty.type: "evidence_conflict"`，意思是证据之间互相打架：agent 不硬给结论，
   而是显式建议 `verify_region` 复核。
-
-## 架构
-
-```mermaid
-flowchart TD
-    Q(["WSI + 提问"]) --> S["scan_overview<br/>低倍全览：缩略图 + 组织掩膜 + 候选网格"]
-    S --> D["detect_roi<br/>候选区采样 · 核密度 blend 打分"]
-    D --> P["perceive<br/>切块 + 批量 VLM 描述（合一步，省一次 agent 往返）"]
-    P --> E[("证据库<br/>claim · polarity · 置信 · 坐标 · 倍率")]
-    P --> V["verify_region<br/>带假设复核：支持 / 质疑 / 不确定"]
-    V --> E
-    E --> K["检索 · 相似病例 / 临床 / 知识"]
-    K --> A["analyze_evidence<br/>决策层：LLM 投票出主诊断 + 鉴别"]
-    A --> C["counterfactual<br/>反事实校验"]
-    C --> G["generate_report<br/>结构化报告"]
-    G --> OUT(["主诊断 + 鉴别诊断 + 证据图"])
-```
-
-收尾链的强制顺序是 `analyze_evidence → counterfactual → generate_report`；直接输出「诊断报告」式文本而不调用 `generate_report` 视为失败。
 
 ## Quick Start
 
@@ -169,34 +148,10 @@ cd pathask
 npm install
 cp .env.example .env      # 按需填写端点与 key
 npm run typecheck         # tsc --noEmit
-npm run dev               # 离线脚本化闭环（见下方说明）
+npm run dev               # 离线脚本化闭环
 ```
 
-### `npm run dev` 跑的是什么
-
-跑的是**离线脚本化闭环**：LLM 的决策由 `src/mock/mockStreamFn.ts` 的预写序列回放，数据来自 `src/mock/mockData.ts`。
-
-**工具、证据库、投票、报告都是真的**——10 个工具真的被执行，证据真的入库，投票真的开跑，最后真的产出上面那个 `Report` 对象。只有**模型决策**与**数据**是假的。所以它验证的是「接线与工具编排有没有断」，**不代表真实读片能力**。
-
-它是确定性的、不联网、不写盘的（`main.ts` 调用 `runQuestion` 时不传 session，故不触发报告落盘），因此也作为 CI 的端到端冒烟步骤运行。
-
-> ⚠️ **离线跑会打印一批看起来吓人的警告，这是预期行为**：
-> - `[describe_patch] Patho-R1 不可用，降级模板：EISDIR ...` —— 没有 VLM 端点时，描述器按 `region_label` 查表降级。这类证据被标记为 stub 且**不参与投票**（`src/tools/describePatch.ts` 的降级分支），报告里会以「⚠️ VLM 降级模板（非镜下观察，不参与投票）」单列。
-> - `[analyze_evidence] 决策 LLM 失败，回落规则投票: ...` —— 决策层走规则投票回落。
->
-> 换句话说，离线模式**同时也在跑一遍降级路径**。最终诊断因此**不具临床意义**，看「流程有没有断」即可。
-
-### 接入真实端点
-
-真实读片需要三件套：
-
-1. 一个 **WSI 登记表 + 切片原片**（`PATHASK_WSI_REGISTRY` 指向的 JSON，`slide_id → 原片路径`）
-2. 一个**病理 VLM 端点**（`VLLM_BASE_URL` / `VLLM_MODEL`）
-3. 一个**决策 LLM 端点**（`PATHASK_LLM_BASE_URL` / `PATHASK_LLM_MODEL`）
-
-> ⚠️ **本仓库的 `createRealSession()`（`src/session.ts`）已实现但入口未接出**——`src/main.ts` 走的是 mock 分支。
-> 想跑真实读片，需要你自己把 `createRealSession()` 接到 `runQuestion()` 上（约十几行）。
-> 本项目**不是一个开箱即跑的 demo**，而是一份可读、可复用的参考实现。
+环境要求（Node 版本、Python / OpenSlide、模型端点）见 [`REQUIREMENTS.md`](REQUIREMENTS.md)。
 
 ### 起 WSI 桥
 
@@ -217,18 +172,6 @@ python wsi-bridge/server.py                  # 默认 http://127.0.0.1:8787
 | **病理 VLM** | 读图：形态学描述与复核 | 本地 vLLM `http://127.0.0.1:8012/v1` | `patho-r1-7b` | `VLLM_BASE_URL` / `VLLM_MODEL` |
 
 **两者都是可替换的 OpenAI 兼容端点**——自建 vLLM、硅基流动或其他托管服务皆可。默认值是**回环占位地址**（本仓库不携带任何内网地址），请改成你自己的部署。
-
-model id **随端点自动推导**（`src/util/llmEndpoint.ts` 的 `llmModelId()`）：硅基流动是 `Qwen/Qwen3-8B`，其他端点默认 `qwen3-8b`，可用 `PATHASK_LLM_MODEL` 覆盖。只需要换地址时**务必确认 model id 也对**——不匹配的 id 会 404，而决策层会**静默回落**到规则投票，日志看着像正常跑完。详见 [`.env.example`](.env.example)。
-
-本项目**不训练、不分发任何模型权重**。
-
-## 诚实边界
-
-- **研究级工具，不是医疗器械，不宣称临床可用**，不越过病理医生。
-- agent 不提高底层模型的固有精度；VLM 差时它只是「优雅地失败」。
-- 仓库里的默认配置是**为了可复现评测**而钉死的，不是「最优产品配置」。
-- 离线桩的最终诊断**不具临床意义**——它验证接线，不验证读片。
-- 本仓库是**参考实现**，不含数据集、切片、权重，也不含评测 harness（理由见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)）。
 
 ## 文档
 

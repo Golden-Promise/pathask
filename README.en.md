@@ -8,9 +8,7 @@ English | [简体中文](README.md)
 
 > A conversational whole-slide-image (WSI) pathology agent — ask a question about an entire slide and get back a **research-grade report with a traceable chain of evidence**.
 
-Given a WSI and a question, the agent decides for itself how to work: scan at low magnification → pick regions → zoom in → have a pathology VLM describe what it sees → pull clinical and knowledge context → synthesize. The output is not a single classification label but a report where **every conclusion points back to coordinates, magnification, and morphological description** — and it can be interrogated.
-
-The agent skeleton is built on [pi-agent](https://github.com/earendil-works/pi) (`pi-ai` + `pi-agent-core`); visual understanding comes from an open-source pathology VLM, and decisions are made by a text-only LLM. Both are **swappable OpenAI-compatible endpoints**. This project trains and distributes no weights.
+General-purpose models are weak at pathology-specific recognition, and domain models are hard to orchestrate into a chain of evidence. PathAsk addresses both: a multimodal agent built on [Pi-Agent](https://github.com/earendil-works/pi) for pathology reading, supporting conversational questioning over any WSI and traceable reports.
 
 ## Tools (the 10 registered by `createTools`)
 
@@ -49,8 +47,7 @@ export type EvidenceRelation = 'supports' | 'contradicts' | 'excludes' | 'refine
 Every evidence node carries a `source`: tool name, `coords` (`x/y/w/h` + magnification + score), `magnification`,
 model name, and degradation flags (`stub` / `degenerate` / `fallback`) — flagged observations do not enter the vote.
 
-Below is **real output** from `npm run dev` (the offline stub), with long lists trimmed and annotated.
-No field has been rewritten:
+Example (long lists trimmed):
 
 ```jsonc
 {
@@ -142,31 +139,11 @@ How to read it:
 - `differential[].evidence_for` holds **±12-character context excerpts around a matched phrase**
   (`evidenceExcerpt` in `analyzeEvidence.ts`), which is why they look truncated — that is by design, not lost text.
   It guarantees every excerpt really does contain a morphological keyword.
-- `source.fallback: true` on `ev-6` means this morphological description came from a **degraded template** rather
-  than a real VLM (the offline stub has no VLM endpoint). Such observations **do not enter the vote** — otherwise
-  "model goes down → every patch becomes a bland template" would wash the conclusion toward benign.
+- `source.fallback: true` means this morphological description came from a **degraded template** rather than a real
+  VLM. Such observations **do not enter the vote** — otherwise "model goes down → every patch becomes a bland
+  template" would wash the conclusion toward benign.
 - `confidence: 0.5` together with `uncertainty.type: "evidence_conflict"` means the evidence contradicts itself:
   the agent does not force a call, it explicitly recommends `verify_region`.
-
-## Architecture
-
-```mermaid
-flowchart TD
-    Q(["WSI + question"]) --> S["scan_overview<br/>low-mag overview: thumbnail + tissue mask + candidate grid"]
-    S --> D["detect_roi<br/>candidate sampling · nuclear-density blend scoring"]
-    D --> P["perceive<br/>tile + batch VLM description (one step, saves a round-trip)"]
-    P --> E[("Evidence store<br/>claim · polarity · confidence · coords · magnification")]
-    P --> V["verify_region<br/>hypothesis review: support / challenge / uncertain"]
-    V --> E
-    E --> K["Retrieval · similar cases / clinical / knowledge"]
-    K --> A["analyze_evidence<br/>decision layer: LLM votes primary diagnosis + differential"]
-    A --> C["counterfactual<br/>counterfactual check"]
-    C --> G["generate_report<br/>structured report"]
-    G --> OUT(["primary diagnosis + differential + evidence graph"])
-```
-
-The wrap-up chain has a mandatory order: `analyze_evidence → counterfactual → generate_report`. Emitting
-"diagnosis report"-style prose without calling `generate_report` counts as a failure.
 
 ## Quick Start
 
@@ -176,43 +153,10 @@ cd pathask
 npm install
 cp .env.example .env      # fill in endpoints and keys as needed
 npm run typecheck         # tsc --noEmit
-npm run dev               # offline scripted loop (see below)
+npm run dev               # offline scripted loop
 ```
 
-### What `npm run dev` actually runs
-
-It runs the **offline scripted loop**: LLM decisions are replayed from a pre-written sequence in
-`src/mock/mockStreamFn.ts`, and data comes from `src/mock/mockData.ts`.
-
-**The tools, the evidence store, the voting, and the report are all real** — all 10 tools really execute, evidence
-really lands in the store, voting really runs, and a real `Report` object comes out the other end. Only the **model
-decisions** and the **data** are fake. So it verifies that "the wiring and tool orchestration are unbroken";
-it says nothing about real reading ability.
-
-It is deterministic, offline, and writes nothing to disk (`main.ts` calls `runQuestion` without a session, so report
-persistence is not triggered) — which is why it also serves as the CI end-to-end smoke step.
-
-> ⚠️ **The offline run prints a batch of alarming-looking warnings. That is expected**:
-> - `[describe_patch] Patho-R1 不可用，降级模板：EISDIR ...` — with no VLM endpoint, the describer degrades to a
->   `region_label` lookup table. Such evidence is flagged as a stub and **does not enter the vote**
->   (the degraded branch in `src/tools/describePatch.ts`); the report lists it separately as
->   "⚠️ VLM degraded template (not a microscopic observation; excluded from voting)".
-> - `[analyze_evidence] 决策 LLM 失败，回落规则投票: ...` — the decision layer falls back to rule-based voting.
->
-> In other words, offline mode **also exercises the degraded paths**. The final diagnosis therefore has
-> **no clinical meaning** — just check that the flow is unbroken.
-
-### Connecting real endpoints
-
-Real reading needs three things:
-
-1. A **WSI registry + slide files** (the JSON `PATHASK_WSI_REGISTRY` points at, mapping `slide_id → slide path`)
-2. A **pathology VLM endpoint** (`VLLM_BASE_URL` / `VLLM_MODEL`)
-3. A **decision LLM endpoint** (`PATHASK_LLM_BASE_URL` / `PATHASK_LLM_MODEL`)
-
-> ⚠️ **`createRealSession()` (`src/session.ts`) is implemented but not wired to any entry point** — `src/main.ts`
-> takes the mock branch. To run real reading you must connect `createRealSession()` to `runQuestion()` yourself
-> (about a dozen lines). This project is **not a turnkey demo**; it is a readable, reusable reference implementation.
+Environment requirements (Node version, Python / OpenSlide, model endpoints) are in [`REQUIREMENTS.md`](REQUIREMENTS.md).
 
 ### Running the WSI bridge
 
@@ -236,22 +180,6 @@ corresponding data sources (see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.m
 **Both are swappable OpenAI-compatible endpoints** — a self-hosted vLLM, SiliconFlow, or any other hosted service.
 The defaults are **loopback placeholders** (this repository carries no internal addresses); point them at your own
 deployment.
-
-The model id is **derived from the endpoint** (`llmModelId()` in `src/util/llmEndpoint.ts`): SiliconFlow gets
-`Qwen/Qwen3-8B`, anything else defaults to `qwen3-8b`, overridable via `PATHASK_LLM_MODEL`. When you change only the
-address, **make sure the model id still matches** — a mismatched id 404s, and the decision layer then **silently falls
-back** to rule-based voting while the logs look like a normal run. See [`.env.example`](.env.example).
-
-This project **trains and distributes no model weights**.
-
-## Honest boundaries
-
-- **A research-grade tool, not a medical device; no clinical claim**, and it does not replace a pathologist.
-- The agent does not raise the underlying model's intrinsic accuracy; a weak VLM only means it "fails gracefully".
-- The defaults in this repository are **pinned for reproducible evaluation**, not "optimal product settings".
-- The offline stub's final diagnosis has **no clinical meaning** — it verifies wiring, not reading.
-- This repository is a **reference implementation**: it contains no datasets, slides, or weights, and no evaluation
-  harness (rationale in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)).
 
 ## Documentation
 
