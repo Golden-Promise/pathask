@@ -41,6 +41,10 @@
   中文 body 的诊断 / 建议 / 推测句全部放行。同时给「形态判定：…」这类**契约要求的结论标签句**
   开豁免——否则「按契约必须写的那个词恰好触发清洗，把写它的那句话连同证据一起删掉」，
   整个证据节点反而出局。
+- **`package-lock.json` 根条目与 `package.json` 不一致**：正式化那轮给 `package.json` 加了
+  `license: MIT` 与 `engines.node`，lockfile 自首次推送起没再生成，仍写着 `license: UNLICENSED`
+  且无 `engines`。后果是克隆后一跑 `npm install` 就把 lockfile 改写、工作树立刻变脏；
+  CI 用 `npm ci`（只读 lockfile 不写盘）所以一直没暴露。现按 npm 的输出同步。
 - **README 与 `THIRD_PARTY_NOTICES.md` 的模型默认值陈述与实现不符**：端点已改为本地优先，
   文档仍写「默认 SiliconFlow `Qwen/Qwen3-8B`」。现改为两个端点均为本地 vLLM 默认，
   并说明 model id 随端点推导、硅基流动降为可选后端。
