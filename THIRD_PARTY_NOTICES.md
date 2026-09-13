@@ -64,15 +64,6 @@ SOFTWARE.
 | **Patho-R1-7B** | 病理 VLM（读图） | HuggingFace gated，CC BY-NC-ND 4.0 | <https://huggingface.co/WenchuanZhang/Patho-R1-7B> |
 | **Qwen3-8B** | 决策 / 编排 LLM（纯文本） | 依上游自身许可证 | <https://huggingface.co/Qwen/Qwen3-8B> |
 
-模型另附来源：Patho-R1 代码库 <https://github.com/Wenchuan-Zhang/Patho-R1>（论文 arXiv:[2505.11404](https://arxiv.org/abs/2505.11404)）。
-
-两处需要留意的地方：
-
-- **gated ≠ 许可证**。这是**两层**约束：许可证允许的再分发，仍受 gated 访问条款限制——
-  gated 数据集通常要求**第三方自行申请**，不能由他人代传。
-- **HISTAI 的许可标注存在不一致**：arXiv 页头标 CC BY 4.0，而 HuggingFace / GitHub 标 CC BY-NC 4.0。
-  本项目按更严格的 **CC BY-NC 4.0** 对待；如需确认请向维护者核实。
-
 ---
 
 ## 关于本项目自有的评测集

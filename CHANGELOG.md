@@ -22,8 +22,9 @@
   接入真实端点、Requirements 表、设计要点、发布边界、诚实边界、引用致谢与许可证各节；
   简介改为「针对通用模型病理垂域识别能力不足、垂域模型证据链编排困难」的问题陈述。
   Requirements 独立成 `REQUIREMENTS.md`，许可证指向已有的 `LICENSE`。
-- `THIRD_PARTY_NOTICES.md` 只保留「用到什么 + 入口链接」，删除「参考工作」一节，
-  自建评测集说明压缩为一段；补 `reg²` 入口，HISTAI 链接由 `HISTAI-mixed` 更正为 `HISTAI-metadata`。
+- `THIRD_PARTY_NOTICES.md` 只保留「用到什么 + 入口链接」表，删除「参考工作」一节、
+  gated 与许可标注不一致的说明、模型的附加来源链接；自建评测集说明压缩为一段；
+  补 `reg²` 入口，HISTAI 链接由 `HISTAI-mixed` 更正为 `HISTAI-metadata`。
 
 ### Fixed
 
