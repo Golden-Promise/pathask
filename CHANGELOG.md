@@ -7,28 +7,9 @@
 
 ## [Unreleased]
 
-### Changed
+暂无。
 
-- **端点默认值改为「本地优先」**：不设任何 env 时，决策/编排 LLM 打 `DEFAULT_LLM_BASE_URL`
-  （回环占位，请按自己的部署改），形态描述 VLM 打 `VLLM_BASE_URL` 兜底值。
-  **硅基流动降为可选后端**——只设 `PATHASK_LLM_BASE_URL=https://api.siliconflow.cn/v1`
-  一个 env 即可，无需再设第二个。
-- **model id 改为随端点推导**（`llmModelId()`）：硅基流动 `Qwen/Qwen3-8B`，非硅基 `qwen3-8b`
-  （可用 `PATHASK_LLM_MODEL` 覆盖）。此前 model id 被写死为硅基的值，指向非硅基端点会 404，
-  并使决策层**静默回落**到规则投票——日志看着像正常跑完。这是「只设一个 URL 就能换端点」成立的前提。
-- `npm run dev` 现在把 `VLLM_BASE_URL` 钉到 discard 端口 `http://127.0.0.1:9/v1`，
-  避免「预写好的假决策序列 + 真 VLM」混着往外发请求（`${VAR:-}` 形式，显式覆盖仍生效）。
-
-### Fixed
-
-- 修 `.env.example` 中「`PATHASK_LLM_CONTEXT_WINDOW=131072` 与部署脚本的 `--max-model-len` 对齐」
-  的说明——两者实际上并不一致，现改为提示按实际部署显式设成同一个数。
-- **修「回落时冒充 LLM 决策」**：决策 LLM 失败会兜底回落规则投票，但推断节点与
-  `analyze_evidence` 工具回执此前按模块常量 `DECISION_MODE` 落笔（它恒读作 `llm`），
-  于是回落的病例在报告里写着「（LLM 决策）」——**LLM 根本没应声**。判据改用跟着实际
-  路径翻转的局部量，并把零证据守卫单列为第三种（它既不是 LLM 也不是规则投的）。
-
-## [0.1.0] - 2026-09-12
+## [0.1.0] - 2026-09-13
 
 首次发布。这是**研究级参考实现**，不是可直接投入使用的产品——边界见 README 的「诚实边界」一节。
 
@@ -49,6 +30,27 @@
 - **WSI 桥**（`wsi-bridge/`）：FastAPI 薄桥，把 OpenSlide 读取暴露成 HTTP（6 条 GET + 4 条 POST）。
 - 文档：`README.md`（中文）/ `README.en.md`（英文）/ `THIRD_PARTY_NOTICES.md` / 本文件 / `CONTRIBUTING.md`。
 - CI：`.github/workflows/ci.yml`（typecheck + 离线闭环）。
+
+### Changed
+
+- **端点默认值改为「本地优先」**：不设任何 env 时，决策/编排 LLM 打 `DEFAULT_LLM_BASE_URL`
+  （回环占位，请按自己的部署改），形态描述 VLM 打 `VLLM_BASE_URL` 兜底值。
+  **硅基流动降为可选后端**——只设 `PATHASK_LLM_BASE_URL=https://api.siliconflow.cn/v1`
+  一个 env 即可，无需再设第二个。
+- **model id 改为随端点推导**（`llmModelId()`）：硅基流动 `Qwen/Qwen3-8B`，非硅基 `qwen3-8b`
+  （可用 `PATHASK_LLM_MODEL` 覆盖）。此前 model id 被写死为硅基的值，指向非硅基端点会 404，
+  并使决策层**静默回落**到规则投票——日志看着像正常跑完。这是「只设一个 URL 就能换端点」成立的前提。
+- `npm run dev` 现在把 `VLLM_BASE_URL` 钉到 discard 端口 `http://127.0.0.1:9/v1`，
+  避免「预写好的假决策序列 + 真 VLM」混着往外发请求（`${VAR:-}` 形式，显式覆盖仍生效）。
+
+### Fixed
+
+- 修 `.env.example` 中「`PATHASK_LLM_CONTEXT_WINDOW=131072` 与部署脚本的 `--max-model-len` 对齐」
+  的说明——两者实际上并不一致，现改为提示按实际部署显式设成同一个数。
+- **修「回落时冒充 LLM 决策」**：决策 LLM 失败会兜底回落规则投票，但推断节点与
+  `analyze_evidence` 工具回执此前按模块常量 `DECISION_MODE` 落笔（它恒读作 `llm`），
+  于是回落的病例在报告里写着「（LLM 决策）」——**LLM 根本没应声**。判据改用跟着实际
+  路径翻转的局部量，并把零证据守卫单列为第三种（它既不是 LLM 也不是规则投的）。
 
 ### Notes
 

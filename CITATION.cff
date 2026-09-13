@@ -12,7 +12,7 @@ abstract: >-
 type: software
 license: MIT
 version: 0.1.0
-date-released: 2026-09-12
+date-released: 2026-09-13
 repository-code: "https://github.com/Golden-Promise/pathask"
 url: "https://github.com/Golden-Promise/pathask"
 keywords:
