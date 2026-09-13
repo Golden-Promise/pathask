@@ -188,5 +188,4 @@ deployment.
 | [`REQUIREMENTS.md`](REQUIREMENTS.md) | Runtime and deployment requirements (Node / Python / OpenSlide / model endpoints) |
 | [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) | Third-party code, data, and models used, with entry links |
 | [`CHANGELOG.md`](CHANGELOG.md) | Change log |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contributing |
 | [`LICENSE`](LICENSE) | MIT |

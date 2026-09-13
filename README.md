@@ -180,5 +180,4 @@ python wsi-bridge/server.py                  # 默认 http://127.0.0.1:8787
 | [`REQUIREMENTS.md`](REQUIREMENTS.md) | 运行与部署要求（Node / Python / OpenSlide / 模型端点） |
 | [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) | 用到的第三方代码、数据与模型，及其入口链接 |
 | [`CHANGELOG.md`](CHANGELOG.md) | 变更记录 |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | 参与开发 |
 | [`LICENSE`](LICENSE) | MIT |
