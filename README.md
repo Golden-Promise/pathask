@@ -6,7 +6,7 @@
 [![Node](https://img.shields.io/badge/node-%3E%3D22.19-339933?logo=node.js&logoColor=white)](REQUIREMENTS.md)
 [![CI](https://github.com/Golden-Promise/pathask/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Golden-Promise/pathask/actions/workflows/ci.yml)
 
-> 对话式全片病理（WSI）阅片 agent —— 对整张切片提问，输出**带证据链**的研究级分析报告。
+> 对话式全片病理（WSI）阅片 agent —— 对整张切片提问，输出带证据链的研究级分析报告。
 
 针对通用模型病理垂域识别能力不足、垂域模型证据链编排困难的问题，基于 [Pi-Agent](https://github.com/earendil-works/pi) 开发面向病理阅片场景的多模态智能体，支持任意 WSI 的对话式提问与可溯源报告。
 
@@ -15,18 +15,15 @@
 | 工具 | 作用 |
 |---|---|
 | `scan_overview` | 低倍全览：缩略图 + 组织掩膜 + 候选网格 |
-| `detect_roi` | 按打分挑候选 ROI（默认 blend = 核密度 + 组织密度），返回 `region_ref` |
-| `perceive` | **单次「切块 + 批量 VLM 描述」**，替代 `inspect_region → describe_patch` 两步，省一次 agent 往返 |
+| `detect_roi` | 按打分挑候选 ROI，返回 `region_ref` |
+| `perceive` | 单次「切块 + 批量 VLM 描述」 |
 | `verify_region` | 带假设的复核：对某区域问「是否见到 X」，返回 支持/质疑/不确定 |
 | `query_clinical` | 临床信息检索 |
 | `query_knowledge` | 知识库检索 |
-| `retrieve_similar_case` | 相似病例检索（CONCH 向量库） |
-| `analyze_evidence` | **决策层**：把全部证据交给 LLM 做病例级判断 |
+| `retrieve_similar_case` | 相似病例检索 |
+| `analyze_evidence` | 决策层：把全部证据交给 LLM 做病例级判断 |
 | `counterfactual` | 反事实：剔除某条证据看结论是否翻转 |
 | `generate_report` | 收尾：产出结构化报告 |
-
-> `inspect_region` / `describe_patch` 仍在源码里，但**不再暴露给 agent**——由 `runner.ts` 的内部路径
-> （热点闭环、双倍率复核）与 `perceive` 直接调用。
 
 ## 报告长什么样
 
@@ -44,7 +41,7 @@ export interface Report {
 export type EvidenceRelation = 'supports' | 'contradicts' | 'excludes' | 'refines'
 ```
 
-每条证据节点都带 `source`：工具名、`coords`（`x/y/w/h` + 倍率 + 打分）、`magnification`、模型名，以及 `stub` / `degenerate` / `fallback` 等**降级标记**——被标记的观察不进投票。
+每条证据节点都带 `source`：工具名、`coords`（`x/y/w/h` + 倍率 + 打分）、`magnification`、模型名，以及 `stub` / `degenerate` / `fallback` 等降级标记——被标记的观察不进投票。
 
 示例（长列表已删减）：
 
@@ -133,9 +130,9 @@ export type EvidenceRelation = 'supports' | 'contradicts' | 'excludes' | 'refine
 
 几点读法：
 
-- `differential[].evidence_for` 是**命中短语 ±12 字上下文**的摘录（`analyzeEvidence.ts` 的 `evidenceExcerpt`），
+- `differential[].evidence_for` 是命中短语 ±12 字上下文的摘录（`analyzeEvidence.ts` 的 `evidenceExcerpt`），
   所以看着像被截断——那是设计如此，不是丢字。它保证摘出来的每个片段都真的含形态学关键词。
-- `source.fallback: true` 表示该形态描述来自**降级模板**而非真实 VLM。这类观察**不参与投票**——
+- `source.fallback: true` 表示该形态描述来自降级模板而非真实 VLM。这类观察不参与投票——
   否则「模型一挂、全片变温和模板」会把结论洗成良性。
 - `confidence: 0.5` 配上 `uncertainty.type: "evidence_conflict"`，意思是证据之间互相打架：agent 不硬给结论，
   而是显式建议 `verify_region` 复核。
@@ -162,16 +159,16 @@ pip install -r wsi-bridge/requirements.txt   # openslide-python / fastapi / uvic
 python wsi-bridge/server.py                  # 默认 http://127.0.0.1:8787
 ```
 
-登记表与 WSI 文件**不在本仓库**——请自备切片并向对应数据源申请访问（见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)）。
+登记表与 WSI 文件不在本仓库——请自备切片并向对应数据源申请访问（见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)）。
 
 ## 模型端点
 
 | 角色 | 用途 | 默认端点 | 默认 model id | 环境变量 |
 |---|---|---|---|---|
-| **决策 / 编排 LLM** | 纯文本：编排循环 + 病例级判断 | 本地 vLLM `http://127.0.0.1:8014/v1` | `qwen3-8b` | `PATHASK_LLM_BASE_URL` / `PATHASK_LLM_MODEL` |
-| **病理 VLM** | 读图：形态学描述与复核 | 本地 vLLM `http://127.0.0.1:8012/v1` | `patho-r1-7b` | `VLLM_BASE_URL` / `VLLM_MODEL` |
+| 决策 / 编排 LLM | 纯文本：编排循环 + 病例级判断 | 本地 vLLM `http://127.0.0.1:8014/v1` | `qwen3-8b` | `PATHASK_LLM_BASE_URL` / `PATHASK_LLM_MODEL` |
+| 病理 VLM | 读图：形态学描述与复核 | 本地 vLLM `http://127.0.0.1:8012/v1` | `patho-r1-7b` | `VLLM_BASE_URL` / `VLLM_MODEL` |
 
-**两者都是可替换的 OpenAI 兼容端点**——自建 vLLM、硅基流动或其他托管服务皆可。默认值是**回环占位地址**（本仓库不携带任何内网地址），请改成你自己的部署。
+两者都是可替换的 OpenAI 兼容端点——自建 vLLM、硅基流动或其他托管服务皆可。默认值是回环占位地址（本仓库不携带任何内网地址），请改成你自己的部署。
 
 ## 文档
 

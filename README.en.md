@@ -6,7 +6,7 @@ English | [简体中文](README.md)
 [![Node](https://img.shields.io/badge/node-%3E%3D22.19-339933?logo=node.js&logoColor=white)](REQUIREMENTS.md)
 [![CI](https://github.com/Golden-Promise/pathask/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Golden-Promise/pathask/actions/workflows/ci.yml)
 
-> A conversational whole-slide-image (WSI) pathology agent — ask a question about an entire slide and get back a **research-grade report with a traceable chain of evidence**.
+> A conversational whole-slide-image (WSI) pathology agent — ask a question about an entire slide and get back a research-grade report with a traceable chain of evidence.
 
 General-purpose models are weak at pathology-specific recognition, and domain models are hard to orchestrate into a chain of evidence. PathAsk addresses both: a multimodal agent built on [Pi-Agent](https://github.com/earendil-works/pi) for pathology reading, supporting conversational questioning over any WSI and traceable reports.
 
@@ -15,18 +15,15 @@ General-purpose models are weak at pathology-specific recognition, and domain mo
 | Tool | Purpose |
 |---|---|
 | `scan_overview` | Low-magnification overview: thumbnail + tissue mask + candidate grid |
-| `detect_roi` | Pick candidate ROIs by score (default `blend` = nuclear density + tissue density); returns a `region_ref` |
-| `perceive` | **Single "tile + batch VLM description" step**, replacing `inspect_region → describe_patch` and saving one agent round-trip |
+| `detect_roi` | Pick candidate ROIs by score; returns a `region_ref` |
+| `perceive` | Single "tile + batch VLM description" step |
 | `verify_region` | Hypothesis-driven review: ask of a region "is X visible?", returning support / challenge / uncertain |
 | `query_clinical` | Clinical information lookup |
 | `query_knowledge` | Knowledge-base lookup |
-| `retrieve_similar_case` | Similar-case retrieval (CONCH vector store) |
-| `analyze_evidence` | **Decision layer**: hand all evidence to the LLM for a case-level judgment |
+| `retrieve_similar_case` | Similar-case retrieval |
+| `analyze_evidence` | Decision layer: hand all evidence to the LLM for a case-level judgment |
 | `counterfactual` | Counterfactual check: drop one piece of evidence and see whether the conclusion flips |
 | `generate_report` | Wrap-up: produce the structured report |
-
-> `inspect_region` / `describe_patch` still exist in the source but are **no longer exposed to the agent** — they are
-> called by `runner.ts`'s internal paths (hotspot loop, dual-magnification review) and by `perceive`.
 
 ## What the report looks like
 
@@ -136,11 +133,11 @@ How to read it:
 
 - The `claim` / `diagnosis` strings are Chinese: the sample is verbatim output, and the pipeline was driven with a
   Chinese-language prompt. The field names and the structure are language-independent.
-- `differential[].evidence_for` holds **±12-character context excerpts around a matched phrase**
+- `differential[].evidence_for` holds ±12-character context excerpts around a matched phrase
   (`evidenceExcerpt` in `analyzeEvidence.ts`), which is why they look truncated — that is by design, not lost text.
   It guarantees every excerpt really does contain a morphological keyword.
-- `source.fallback: true` means this morphological description came from a **degraded template** rather than a real
-  VLM. Such observations **do not enter the vote** — otherwise "model goes down → every patch becomes a bland
+- `source.fallback: true` means this morphological description came from a degraded template rather than a real
+  VLM. Such observations do not enter the vote — otherwise "model goes down → every patch becomes a bland
   template" would wash the conclusion toward benign.
 - `confidence: 0.5` together with `uncertainty.type: "evidence_conflict"` means the evidence contradicts itself:
   the agent does not force a call, it explicitly recommends `verify_region`.
@@ -167,18 +164,18 @@ pip install -r wsi-bridge/requirements.txt   # openslide-python / fastapi / uvic
 python wsi-bridge/server.py                  # defaults to http://127.0.0.1:8787
 ```
 
-The registry and the WSI files are **not in this repository** — bring your own slides and request access from the
+The registry and the WSI files are not in this repository — bring your own slides and request access from the
 corresponding data sources (see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)).
 
 ## Model endpoints
 
 | Role | Purpose | Default endpoint | Default model id | Env vars |
 |---|---|---|---|---|
-| **Decision / orchestration LLM** | Text-only: drives the loop + case-level judgment | local vLLM `http://127.0.0.1:8014/v1` | `qwen3-8b` | `PATHASK_LLM_BASE_URL` / `PATHASK_LLM_MODEL` |
-| **Pathology VLM** | Reads images: morphological description and review | local vLLM `http://127.0.0.1:8012/v1` | `patho-r1-7b` | `VLLM_BASE_URL` / `VLLM_MODEL` |
+| Decision / orchestration LLM | Text-only: drives the loop + case-level judgment | local vLLM `http://127.0.0.1:8014/v1` | `qwen3-8b` | `PATHASK_LLM_BASE_URL` / `PATHASK_LLM_MODEL` |
+| Pathology VLM | Reads images: morphological description and review | local vLLM `http://127.0.0.1:8012/v1` | `patho-r1-7b` | `VLLM_BASE_URL` / `VLLM_MODEL` |
 
-**Both are swappable OpenAI-compatible endpoints** — a self-hosted vLLM, SiliconFlow, or any other hosted service.
-The defaults are **loopback placeholders** (this repository carries no internal addresses); point them at your own
+Both are swappable OpenAI-compatible endpoints — a self-hosted vLLM, SiliconFlow, or any other hosted service.
+The defaults are loopback placeholders (this repository carries no internal addresses); point them at your own
 deployment.
 
 ## Documentation
