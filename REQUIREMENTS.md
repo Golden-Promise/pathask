@@ -28,8 +28,10 @@ TypeScript 调不动 OpenSlide（Python 库），切片读取走一个 FastAPI �
 
 ```bash
 pip install -r wsi-bridge/requirements.txt
-python wsi-bridge/server.py     # 默认 http://127.0.0.1:8787
+PATHASK_WSI_REGISTRY=wsilist.json python wsi-bridge/server.py   # 默认 http://127.0.0.1:8787
 ```
+
+`PATHASK_WSI_REGISTRY` 是必需的——不设或指向的文件不存在，服务直接退出。
 
 ## 模型端点（仅真实读片需要）
 
@@ -47,6 +49,7 @@ model id 随端点自动推导；指向公网托管（如硅基流动）时，�
 
 以下**不在本仓库**，需自行准备：
 
-1. **WSI 登记表**——`PATHASK_WSI_REGISTRY` 指向的 JSON，内容为 `slide_id → 原片路径`
+1. **WSI 登记表**——`PATHASK_WSI_REGISTRY` 指向的 JSON，每条含 `id` / `path` / `cancer` 三个
+   必填字段（格式与字段说明见 [`wsi-bridge/README.md`](wsi-bridge/README.md)）
 2. **切片原片**——向对应数据源申请访问，出处处见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)
 3. **入口接线**——`createRealSession()`（`src/session.ts`）已实现但未接到 `src/main.ts`，需自行接上（约十几行）

@@ -30,6 +30,10 @@
 - `THIRD_PARTY_NOTICES.md` 只保留「用到什么 + 入口链接」表，删除「参考工作」一节、
   gated 与许可标注不一致的说明、模型的附加来源链接；自建评测集说明压缩为一段；
   补 `reg²` 入口，HISTAI 链接由 `HISTAI-mixed` 更正为 `HISTAI-metadata`。
+- **WSI 桥文档改正 `PATHASK_WSI_REGISTRY` 的性质**：原文称其为「可选环境变量」，
+  实际缺了服务直接 `RuntimeError` 退出、`/health` 都不会起。`wsi-bridge/README.md`
+  补上登记表 JSON 格式与字段表（`id` / `path` / `cancer` 必填，`case_id` 可选），
+  README 与 `REQUIREMENTS.md` 的启动命令同步带上该变量。
 
 ### Fixed
 

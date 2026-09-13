@@ -63,11 +63,13 @@ TypeScript cannot call OpenSlide (a Python library), so there is a thin FastAPI 
 
 ```bash
 pip install -r wsi-bridge/requirements.txt   # openslide-python / fastapi / uvicorn
-python wsi-bridge/server.py                  # defaults to http://127.0.0.1:8787
+PATHASK_WSI_REGISTRY=wsilist.json python wsi-bridge/server.py   # defaults to http://127.0.0.1:8787
 ```
 
-The registry and the WSI files are not in this repository — bring your own slides and request access from the
-corresponding data sources (see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)).
+`PATHASK_WSI_REGISTRY` is required — the server exits without it (registry format in
+[`wsi-bridge/README.md`](wsi-bridge/README.md)). The registry and the WSI files are not in this repository —
+bring your own slides and request access from the corresponding data sources
+(see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)).
 
 ## Model endpoints
 

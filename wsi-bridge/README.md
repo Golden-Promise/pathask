@@ -8,11 +8,25 @@ WSI 读取暴露成 HTTP 接口，作为 TS↔Python 的薄桥。每个 `slide_i
 
 ```bash
 # 需先装好 openslide-python / fastapi / uvicorn（见 requirements.txt）
-python wsi-bridge/server.py
+PATHASK_WSI_REGISTRY=/path/to/wsilist.json python wsi-bridge/server.py
 # 默认 http://127.0.0.1:8787
 ```
 
-可选环境变量：`PATHASK_WSI_REGISTRY`（登记表 JSON 路径）、`PATHASK_BRIDGE_PORT`。
+`PATHASK_WSI_REGISTRY` **是必需的**——指向登记表 JSON，不设（或文件不存在）服务直接
+`RuntimeError` 退出，连 `/health` 都不会起。登记表格式：
+
+```json
+{"slides": [{"id": "case_00001", "path": "slides/case_00001.tiff", "cancer": "breast"}]}
+```
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `id` | 是 | `/slides/{id}/...` 里的 `{id}`；TS 端会做去扩展名 / basename 回退 |
+| `path` | 是 | 切片原片路径，**相对登记表所在目录**解析；文件不存在时该条跳过并打印 `[warn]` |
+| `cancer` | 是 | `/slides` 列表里回显的癌种。**缺了 `/health` 仍返 200，但 `/slides` 会 500**（`KeyError`） |
+| `case_id` | 否 | 可选的病例号，`/slides` 原样回显 |
+
+其它环境变量（可选）：`PATHASK_BRIDGE_PORT`（默认 8787）、`PATHASK_BRIDGE_HOST`（默认 127.0.0.1）。
 
 ## 接口
 

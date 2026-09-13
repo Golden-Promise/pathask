@@ -62,10 +62,11 @@ TS 调不动 OpenSlide（Python 库），所以有一个 FastAPI 薄桥：
 
 ```bash
 pip install -r wsi-bridge/requirements.txt   # openslide-python / fastapi / uvicorn
-python wsi-bridge/server.py                  # 默认 http://127.0.0.1:8787
+PATHASK_WSI_REGISTRY=wsilist.json python wsi-bridge/server.py   # 默认 http://127.0.0.1:8787
 ```
 
-登记表与 WSI 文件不在本仓库——请自备切片并向对应数据源申请访问（见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)）。
+`PATHASK_WSI_REGISTRY` 是必需的，缺了服务直接退出（登记表格式见 [`wsi-bridge/README.md`](wsi-bridge/README.md)）。
+登记表与切片文件都不在本仓库——请自备切片并向对应数据源申请访问（见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)）。
 
 ## 模型端点
 
