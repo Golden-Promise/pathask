@@ -224,6 +224,26 @@ De-identification performed: internal hostnames, private IPs, cluster absolute p
 have been removed from source and documentation or replaced with placeholders.
 **An n-gram overlap check was also run**: the published surface contains no ≥40-character fragment of evaluation-set source report text.
 
+### The two endpoint defaults are the only *intentional* divergence
+
+This repository is a code subset synced from a private development tree **at release time**, not a live mirror —
+it may therefore **lag behind** that tree. Lag is not divergence.
+
+Exactly two lines differ **by design**, both endpoint defaults:
+
+| Location | Private tree | This repository |
+|---|---|---|
+| `DEFAULT_LLM_BASE_URL` in `src/util/llmEndpoint.ts` | real internal address | loopback placeholder `http://127.0.0.1:8014/v1` |
+| `VLLM_BASE_URL` fallback in `src/tools/describePatch.ts` | real internal address | loopback placeholder `http://127.0.0.1:8012/v1` |
+
+**Do not copy either line across when syncing `src/`** — pulling the private address in breaks the de-identification
+boundary; pushing the loopback placeholder back makes the private tree unreachable by default. There is no
+de-identification or sync script; the rule is upheld by hand.
+
+> ⚠️ The model id is **derived from the endpoint** (`llmModelId()`): `Qwen/Qwen3-8B` for SiliconFlow,
+> `qwen3-8b` otherwise. Changing only the URL leaves an unmatched id → HTTP 404 → the decision layer
+> **silently falls back** to rule-based voting, while the logs look like a clean run. See `.env.example`.
+
 ## Citations and Acknowledgements
 
 - **pi-agent** — MIT, © 2025 Mario Zechner, <https://github.com/earendil-works/pi>. Referenced as a submodule, unmodified.

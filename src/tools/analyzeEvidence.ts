@@ -660,8 +660,9 @@ interface LlmDecision {
   note?: string
 }
 
-/** 决策 LLM 输出（非流式 JSON）。端点默认仍是硅基流动的 `Qwen/Qwen3-8B`，可用
- *  `PATHASK_LLM_BASE_URL` 切到本地 vLLM（QWEN3_8B.baseUrl 即解析结果，两处共用一份）。
+/** 决策 LLM 输出（非流式 JSON）。**默认端点 = 本地自建 vLLM**（见 util/llmEndpoint.ts），
+ *  model id 由 `llmModelId()` 随端点推出（非硅基默认 `qwen3-8b`），可用 `PATHASK_LLM_BASE_URL`
+ *  切到硅基流动等任意 OpenAI 兼容端点（QWEN3_8B.baseUrl / .id 即解析结果，两处共用一份）。
  *  必须用 undici fetch + ProxyAgent（Node 全局 fetch 不走 dispatcher，见 streamFn 注释）；
  *  但内网端点由 util/llmEndpoint 判为**不挂代理**——undici 的 ProxyAgent 不读 NO_PROXY。
  *  key 只从 env 取，不硬编码（发布去内网 IP 泄密）。 */

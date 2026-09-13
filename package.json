@@ -8,7 +8,7 @@
     "node": ">=22.19.0"
   },
   "scripts": {
-    "dev": "tsx src/main.ts",
+    "dev": "VLLM_BASE_URL=${VLLM_BASE_URL:-http://127.0.0.1:9/v1} tsx src/main.ts",
     "bridge": "python wsi-bridge/server.py",
     "typecheck": "tsc --noEmit"
   },

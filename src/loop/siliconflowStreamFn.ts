@@ -33,22 +33,25 @@ import { fetch } from 'undici'
 import {
   DEFAULT_LLM_BASE_URL,
   DEFAULT_LLM_CONTEXT_WINDOW,
-  DEFAULT_LLM_MODEL,
   endpointLabel,
   llmApiKey,
+  llmModelId,
   llmProxyAgent,
   thinkingFields,
 } from '../util/llmEndpoint'
 
-// ============ 端点解析（默认硅基流动；env 可切本地 vLLM） ============
+// ============ 端点解析（默认本地自建端点；env 可切硅基流动/第三方） ============
 // ⚠️ 这里在**模块作用域**读 process.env 是安全的：本文件第 18 行 `import 'dotenv/config'`
 //    在 const 求值之前已执行。若日后把 dotenv 挪走，下面两行会静默读不到 .env。
 export const LLM_BASE_URL = (process.env.PATHASK_LLM_BASE_URL ?? DEFAULT_LLM_BASE_URL).replace(/\/+$/, '')
+/** 实际发出的 model id。**随端点推**（端点相关的第 ④ 件事，见 util/llmEndpoint.ts:llmModelId）。 */
+export const LLM_MODEL_ID = llmModelId(LLM_BASE_URL)
 
 // ============ Model 对象（free tier：¥0/M tokens） ============
 export const QWEN3_8B: Model<'openai-completions'> = {
-  id: process.env.PATHASK_LLM_MODEL ?? DEFAULT_LLM_MODEL,
-  name: `Qwen3-8B (${endpointLabel(LLM_BASE_URL)})`,
+  id: LLM_MODEL_ID,
+  // name 用同一个值：写死 `Qwen3-8B` 前缀会在非硅基端点下变成隐性假话。
+  name: `${LLM_MODEL_ID} (${endpointLabel(LLM_BASE_URL)})`,
   api: 'openai-completions',
   // ⚠️ 已知名不副实（本地端点时仍报 'siliconflow'）：它是 pi-ai 的 Model 身份字段，会被回放进
   //    AssistantMessage。真正的端点身份看 baseUrl / LLM_BASE_URL。

@@ -7,7 +7,22 @@
 
 ## [Unreleased]
 
-暂无。
+### Changed
+
+- **端点默认值改为「本地优先」**：不设任何 env 时，决策/编排 LLM 打 `DEFAULT_LLM_BASE_URL`
+  （回环占位，请按自己的部署改），形态描述 VLM 打 `VLLM_BASE_URL` 兜底值。
+  **硅基流动降为可选后端**——只设 `PATHASK_LLM_BASE_URL=https://api.siliconflow.cn/v1`
+  一个 env 即可，无需再设第二个。
+- **model id 改为随端点推导**（`llmModelId()`）：硅基流动 `Qwen/Qwen3-8B`，非硅基 `qwen3-8b`
+  （可用 `PATHASK_LLM_MODEL` 覆盖）。此前 model id 被写死为硅基的值，指向非硅基端点会 404，
+  并使决策层**静默回落**到规则投票——日志看着像正常跑完。这是「只设一个 URL 就能换端点」成立的前提。
+- `npm run dev` 现在把 `VLLM_BASE_URL` 钉到 discard 端口 `http://127.0.0.1:9/v1`，
+  避免「预写好的假决策序列 + 真 VLM」混着往外发请求（`${VAR:-}` 形式，显式覆盖仍生效）。
+
+### Fixed
+
+- 修 `.env.example` 中「`PATHASK_LLM_CONTEXT_WINDOW=131072` 与部署脚本的 `--max-model-len` 对齐」
+  的说明——两者实际上并不一致，现改为提示按实际部署显式设成同一个数。
 
 ## [0.1.0] - 2026-09-12
 

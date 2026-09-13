@@ -18,6 +18,20 @@ npm run dev        # 离线脚本化闭环，端到端冒烟
 本来就在跑降级路径，理由见 README 的「`npm run dev` 跑的是什么」。
 
 > ⚠️ **用 `./node_modules/.bin/tsc`，不要用 `npx tsc`。**
+
+### 端点默认值：改之前先读
+
+`src/` 里只有**两行**端点默认值，且它们是本仓库与上游私有开发树之间**唯一「有意」的差异**
+（本仓库是发版时从私有树同步出来的子集，**可能落后于私有树的开发进度**——那是滞后，不是分歧）：
+
+- `src/util/llmEndpoint.ts` 的 `DEFAULT_LLM_BASE_URL` —— 回环占位 `http://127.0.0.1:8014/v1`
+- `src/tools/describePatch.ts` 的 `VLLM_BASE_URL` 兜底 —— 回环占位 `http://127.0.0.1:8012/v1`
+
+**请勿往这个仓库里的这两行填真实地址**（含内网 IP、内部主机名），脱敏边界见 README「发布边界」。
+
+改端点时注意 **model id 是随端点推导的**（`llmModelId()`）：硅基流动 → `Qwen/Qwen3-8B`，
+其他 → `qwen3-8b`。只改地址不改 model，未匹配的 id 会让服务端返回 404，而决策层是**静默回落**
+到规则投票的——日志看着像正常跑完。排查时用 `PATHASK_LLM_MODEL` 显式覆盖验证。
 > 本地 `node_modules` 里没有 `tsc` 时（例如忘了 `npm ci`），`npx` 会去下载一个同名的
 > 诱饵包 `tsc@2.0.4`，它只打印一行 `This is not the tsc command you are looking for`，
 > **退出码却是 0**——门禁会假绿。`npm run typecheck` 走的是本地 bin，没这个问题。

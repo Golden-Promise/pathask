@@ -1,19 +1,28 @@
 /**
  * LLM 端点解析（编排器 + 决策 LLM 共用）。
  *
- * 为什么单独成模块：端点相关的三件事——**代理挂不挂**、**key 从哪来**、**思考字段怎么发**——
- * 必须一起变。两份复制品必然漂移，故收敛到这里。
+ * 为什么单独成模块：端点相关的**四件事**——**代理挂不挂**、**key 从哪来**、**思考字段怎么发**、
+ * **model id 用哪个**——必须一起变。两份复制品必然漂移，故收敛到这里。
  *
- * **默认路径零改动**：不设 `PATHASK_LLM_BASE_URL` 时，本模块全部解析结果为默认档
- * （硅基 URL、顶层 enable_thinking、挂代理、key 取 SILICONFLOW_API_KEY、240s 超时）。
+ * **默认 = 本地自建端点**：不设任何 env 时打下面那个 `DEFAULT_LLM_BASE_URL`。
+ * 公网硅基流动降为**可选**——只设 `PATHASK_LLM_BASE_URL=https://api.siliconflow.cn/v1` 即可，
+ * model id 由 `llmModelId()` 随端点自动推出，**不需要第二个 env**。
+ *
+ * ⚠️ 第 ④ 件（model id）是后补的，补之前「只设 BASE_URL」是**假的**：硅基的 `Qwen/Qwen3-8B`
+ *    会被发给非硅基端点 → 404 → analyzeEvidence 静默回落规则投票，而日志看着像正常跑完。
  */
 import { ProxyAgent } from 'undici'
 
-export const DEFAULT_LLM_BASE_URL = 'https://api.siliconflow.cn/v1'
-export const DEFAULT_LLM_MODEL = 'Qwen/Qwen3-8B'
+/** 默认端点 = **回环占位**。本仓库不携带任何内网地址，请按你的部署改成实际端点
+ *  （任意 OpenAI 兼容：自建 vLLM / 硅基流动 / 其他）。 */
+export const DEFAULT_LLM_BASE_URL = 'http://127.0.0.1:8014/v1'
+/** 硅基流动的 model id 带组织前缀，与自建 vLLM 的 `--served-model-name` 不同名。 */
+export const SILICONFLOW_LLM_MODEL = 'Qwen/Qwen3-8B'
+/** 非硅基端点的默认 model id，按自建 vLLM 常见的 `--served-model-name` 取值。 */
+export const LOCAL_LLM_MODEL = 'qwen3-8b'
 export const DEFAULT_LLM_CONTEXT_WINDOW = 131072
 
-/** 是否为硅基流动官方端点。**只**用它判别「思考字段发哪一种形态」与「默认超时」。 */
+/** 是否为硅基流动官方端点。**只**用它判别「思考字段发哪一种形态」「默认超时」「默认 model id」。 */
 export function isSiliconFlow(baseUrl: string): boolean {
   try {
     return /(^|\.)siliconflow\.(cn|com)$/i.test(new URL(baseUrl).hostname)
@@ -37,6 +46,23 @@ export function isPrivateHost(baseUrl: string): boolean {
     /^192\.168\./.test(host) ||
     /^172\.(1[6-9]|2\d|3[01])\./.test(host)
   )
+}
+
+/** 默认 model id **随端点推**（端点相关的第 ④ 件事）。
+ *
+ *  判据用 `isSiliconFlow`，**不是** `isPrivateHost`：model id 与「思考字段形态」都是
+ *  **服务端是什么软件/哪家厂商**的属性，而 `isPrivateHost` 是网络可达性轴（挂不挂代理、
+ *  允不允许无 key）。两者混用会造出「model 按一个判据推、thinking 按另一个判据推」的错配，
+ *  正是当初把这几件事收敛到本模块要消灭的东西。
+ *
+ *  推论：第三方公网非硅基端点会同时拿到 `chat_template_kwargs` + `qwen3-8b` + 120s——
+ *  这是「非硅基 ⇒ 按 vLLM 对待」的**有意**口径，逃生口是显式 `PATHASK_LLM_MODEL`。
+ *
+ *  显式 env 优先级最高，与 `llmTimeoutMs` 的 `PATHASK_LLM_TIMEOUT_MS` 同构。 */
+export function llmModelId(baseUrl: string): string {
+  const explicit = process.env.PATHASK_LLM_MODEL
+  if (explicit) return explicit
+  return isSiliconFlow(baseUrl) ? SILICONFLOW_LLM_MODEL : LOCAL_LLM_MODEL
 }
 
 export function llmProxyUrl(): string {
